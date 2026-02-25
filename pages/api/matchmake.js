@@ -18,54 +18,38 @@ export default async function handler(req, res) {
     if (!playerId || !playerName) return res.status(400).json({ error: "Missing fields" });
 
     const sb = getDB();
-    const now = new Date();
 
-    // Clean stale queue entries
-    await sb.from("queue").delete().lt("joined_at", new Date(now - 90000).toISOString());
+    // Check if already matched (re-entry after page refresh)
+    const { data: existing } = await sb
+      .from("player_rooms").select("room_id").eq("player_id", playerId).maybeSingle();
+    if (existing?.room_id) {
+      const { data: room } = await sb.from("rooms").select("*").eq("id", existing.room_id).maybeSingle();
+      if (room) {
+        const opp = (room.players || []).find(p => p !== playerName) || "Opponent";
+        return res.status(200).json({ matched: true, room, opponentName: opp });
+      }
+    }
 
-    // Find waiting opponent
-    const { data: waiting, error: qErr } = await sb
-      .from("queue").select("*").neq("player_id", playerId)
-      .order("joined_at", { ascending: true }).limit(1);
-
+    // Upsert into queue
+    const { error: qErr } = await sb.from("queue").upsert({
+      player_id: playerId, player_name: playerName, joined_at: new Date().toISOString()
+    });
     if (qErr) return res.status(500).json({ error: "Queue error: " + qErr.message });
 
-    const opponent = waiting?.[0];
+    // Try atomic match via DB function
+    const { data, error: rpcErr } = await sb.rpc("try_match_player", { p_player_id: playerId });
 
-    if (opponent) {
-      // Remove opponent from queue
-      await sb.from("queue").delete().eq("player_id", opponent.player_id);
-
-      // Create room
-      const roomId = makeId();
-      const room = {
-        id: roomId,
-        letter: randomLetter(),
-        status: "playing",
-        players: [opponent.player_name, playerName],
-        player_ids: [opponent.player_id, playerId],
-        answers: {},
-        validation: {}
-      };
-
-      const { error: roomErr } = await sb.from("rooms").insert(room);
-      if (roomErr) return res.status(500).json({ error: "Room error: " + roomErr.message });
-
-      // Write lookup entries so both players can find this room by their ID
-      await sb.from("player_rooms").upsert([
-        { player_id: opponent.player_id, room_id: roomId },
-        { player_id: playerId,           room_id: roomId }
-      ]);
-
-      return res.status(200).json({ matched: true, room, opponentName: opponent.player_name });
-    } else {
-      // Add me to queue
-      const { error: upsertErr } = await sb.from("queue").upsert({
-        player_id: playerId, player_name: playerName, joined_at: now.toISOString()
-      });
-      if (upsertErr) return res.status(500).json({ error: "Queue upsert error: " + upsertErr.message });
-      return res.status(200).json({ matched: false });
+    if (!rpcErr && data?.matched) {
+      const { data: room } = await sb.from("rooms").select("*").eq("id", data.room_id).maybeSingle();
+      if (room) {
+        const opp = (room.players || []).find(p => p !== playerName) || "Opponent";
+        return res.status(200).json({ matched: true, room, opponentName: opp });
+      }
     }
+
+    // Nobody to match yet — client will poll match-status
+    return res.status(200).json({ matched: false });
+
   } catch (err) {
     return res.status(500).json({ error: String(err.message || err) });
   }
