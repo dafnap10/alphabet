@@ -2,65 +2,44 @@ import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
+// CONSTANTS & HELPERS  (module-level — never recreated)
 // ─────────────────────────────────────────────────────────────────────────────
-function makeId() { return Math.random().toString(36).substring(2, 10); }
-
 const CATS  = ["Country","City","Animal","Food","Celebrity","Brand","Object"];
 const ICONS = { Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐", Brand:"💼", Object:"📦" };
+const LETTERS = "ABCDEFGHIJKLMNOPRSTW";
 
-async function apiValidate(answers, letter) {
-  try {
-    const r = await fetch("/api/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers, letter })
-    });
-    return await r.json();
-  } catch {
-    const fb = {};
-    CATS.forEach(c => {
-      const v = (answers[c]||"").trim();
-      const ok = v.length >= 2 && v.toLowerCase().startsWith(letter.toLowerCase());
-      fb[c] = { valid: ok, reason: ok ? "Valid" : "Invalid or empty" };
-    });
-    return fb;
-  }
+function makeId()       { return Math.random().toString(36).substring(2, 10); }
+function pickLetter()   { return LETTERS[Math.floor(Math.random() * LETTERS.length)]; }
+function score(v)       { return v ? Object.values(v).reduce((s,e) => s+(e?.valid?10:0), 0) : 0; }
+
+async function apiPost(path, body) {
+  const r = await fetch(path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const t = await r.text();
+  if (!t) throw new Error(`Empty response from ${path} (${r.status})`);
+  const j = JSON.parse(t);
+  if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+  return j;
 }
 
-async function apiGetRoom(id) {
-  const r = await fetch(`/api/room?id=${id}`);
+async function apiGet(path) {
+  const r = await fetch(path);
+  const t = await r.text();
+  if (!t) return null;
+  const j = JSON.parse(t);
   if (!r.ok) return null;
-  return r.json();
-}
-
-async function apiSaveAnswers(id, playerName, answers, validation) {
-  await fetch("/api/room", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, playerName, answers, validation })
-  });
-}
-
-function totalScore(v) {
-  if (!v) return 0;
-  return Object.values(v).reduce((s, e) => s + (e?.valid ? 10 : 0), 0);
+  return j;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CSS (injected once as a style tag)
+// CSS
 // ─────────────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0f;--surf:#12121a;--surf2:#1c1c28;--brd:#2a2a3d;
-  --acc:#e8ff47;--red:#ff4757;--txt:#f0f0ff;--mute:#6b6b8a;--ok:#2dff8a;
-}
+:root{--bg:#0a0a0f;--surf:#12121a;--surf2:#1c1c28;--brd:#2a2a3d;--acc:#e8ff47;--red:#ff4757;--txt:#f0f0ff;--mute:#6b6b8a;--ok:#2dff8a}
 body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .G{min-height:100vh;display:flex;flex-direction:column;align-items:center;background:var(--bg);overflow-x:hidden}
-.noise{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")}
+.noise{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")}
 .S{position:relative;z-index:1;width:100%;max-width:480px;padding:0 16px}
 .home{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}
 .logo{text-align:center;margin-bottom:48px}
@@ -162,18 +141,18 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 // APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [screen,     setScreen]     = useState("home");
-  const [letter,     setLetter]     = useState("B");
-  const [answers,    setAnswers]    = useState({});
-  const [timeLeft,   setTimeLeft]   = useState(60);
-  const [submitted,  setSubmitted]  = useState(false);
-  const [validating, setValidating] = useState(false);
-  const [validation, setValidation] = useState(null);
-  const [playerName, setPlayerName] = useState("");
-  const [oppName,    setOppName]    = useState("");
-  const [oppAnswers, setOppAnswers] = useState({});
-  const [oppVal,     setOppVal]     = useState(null);
-  const [error,      setError]      = useState("");
+  const [screen,      setScreen]      = useState("home");
+  const [letter,      setLetter]      = useState("B");
+  const [answers,     setAnswers]     = useState({});
+  const [timeLeft,    setTimeLeft]    = useState(60);
+  const [submitted,   setSubmitted]   = useState(false);
+  const [validating,  setValidating]  = useState(false);
+  const [validation,  setValidation]  = useState(null);
+  const [playerName,  setPlayerName]  = useState("");
+  const [oppName,     setOppName]     = useState("");
+  const [oppAnswers,  setOppAnswers]  = useState({});
+  const [oppVal,      setOppVal]      = useState(null);
+  const [error,       setError]       = useState("");
   const [queueStatus, setQueueStatus] = useState("searching");
 
   const timerRef   = useRef(null);
@@ -221,18 +200,34 @@ export default function Home() {
     }, 1000);
   }
 
-  // ── Submit + AI Validate ───────────────────────────────────────────────────
-  async function doSubmit(l, code) {
+  // ── Submit + validate ──────────────────────────────────────────────────────
+  async function doSubmit(l, roomId) {
     if (submittedR.current) return;
     clearInterval(timerRef.current);
     submittedR.current = true;
     setSubmitted(true);
     setValidating(true);
-    const result = await apiValidate(answersR.current, l);
+
+    let result;
+    try {
+      result = await apiPost("/api/validate", { answers: answersR.current, letter: l });
+    } catch {
+      // fallback
+      result = {};
+      CATS.forEach(c => {
+        const v = (answersR.current[c]||"").trim();
+        const ok = v.length >= 2 && v.toLowerCase().startsWith(l.toLowerCase());
+        result[c] = { valid: ok, reason: ok ? "Valid" : "Invalid or empty" };
+      });
+    }
+
     setValidation(result);
     setValidating(false);
-    if (code) {
-      await apiSaveAnswers(code, nameR.current, answersR.current, result);
+
+    if (roomId) {
+      try {
+        await apiPost("/api/room", { id: roomId, playerName: nameR.current, answers: answersR.current, validation: result });
+      } catch(e) { console.error("save answers:", e); }
     } else {
       setScreen("solo-score");
     }
@@ -240,8 +235,7 @@ export default function Home() {
 
   // ── Solo ───────────────────────────────────────────────────────────────────
   function startSolo() {
-    const letters = "ABCDEFGHIJKLMNOPRSTW";
-    const l = letters[Math.floor(Math.random() * letters.length)];
+    const l = pickLetter();
     setLetter(l); letterR.current = l;
     setAnswers({}); answersR.current = {};
     setScreen("solo-game");
@@ -258,29 +252,22 @@ export default function Home() {
     setScreen("matchmaking");
 
     try {
-      const r = await fetch("/api/matchmake", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: myId, playerName })
-      });
-      const result = await r.json();
-
+      const result = await apiPost("/api/matchmake", { playerId: myId, playerName });
       if (result.matched) {
-        handleMatchFound(result.room, result.opponentName);
+        launchGame(result.room, result.opponentName);
       } else {
-        // Poll for match
+        // Poll — each poll also actively tries to match
         pollRef.current = setInterval(async () => {
           try {
-            const pr = await fetch(`/api/match-status?playerId=${myId}`);
-            const ps = await pr.json();
-            if (ps.matched && ps.room) {
+            const ps = await apiGet(`/api/match-status?playerId=${myId}`);
+            if (ps?.matched && ps.room) {
               clearInterval(pollRef.current);
-              const opp = ps.room.players.find(p => p !== nameR.current) || "Opponent";
+              const opp = (ps.room.players || []).find(p => p !== nameR.current) || "Opponent";
               setQueueStatus("found");
-              setTimeout(() => handleMatchFound(ps.room, opp), 800);
+              setTimeout(() => launchGame(ps.room, opp), 800);
             }
           } catch { /* keep polling */ }
-        }, 2500);
+        }, 2000);
       }
     } catch (e) {
       setScreen("online-name");
@@ -288,7 +275,7 @@ export default function Home() {
     }
   }
 
-  function handleMatchFound(room, opponentName) {
+  function launchGame(room, opponentName) {
     roomR.current = room.id;
     setOppName(opponentName);
     const l = room.letter;
@@ -300,24 +287,20 @@ export default function Home() {
 
   async function cancelMatchmaking() {
     clearInterval(pollRef.current);
-    await fetch("/api/leave-queue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playerId: myIdR.current })
-    }).catch(() => {});
+    try { await apiPost("/api/leave-queue", { playerId: myIdR.current }); } catch {}
     setScreen("online-name");
   }
 
-  // ── Poll for opponent results ──────────────────────────────────────────────
+  // ── Poll for opponent results after submitting ─────────────────────────────
   useEffect(() => {
     if (screen !== "online-game" || !submitted || validating) return;
-    const code = roomR.current;
+    const roomId = roomR.current;
     clearInterval(pollAnsRef.current);
     pollAnsRef.current = setInterval(async () => {
       try {
-        const room = await apiGetRoom(code);
+        const room = await apiGet(`/api/room?id=${roomId}`);
         if (!room) return;
-        const opp = room.players.find(p => p !== nameR.current);
+        const opp = (room.players || []).find(p => p !== nameR.current);
         if (opp && room.answers?.[opp] && room.validation?.[opp]) {
           clearInterval(pollAnsRef.current);
           setOppAnswers(room.answers[opp]);
@@ -325,39 +308,21 @@ export default function Home() {
           setScreen("online-score");
         }
       } catch { /* keep polling */ }
-    }, 2500);
+    }, 2000);
     return () => clearInterval(pollAnsRef.current);
   }, [screen, submitted, validating]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const pct  = (timeLeft / DURATION) * 100;
-  const tcol = timeLeft > 20 ? "var(--ok)" : timeLeft > 10 ? "var(--acc)" : "var(--red)";
-  const myPts = totalScore(validation);
-  const opPts = totalScore(oppVal);
-  const changeAnswer = (cat, val) => setAnswers(p => ({ ...p, [cat]: val }));
+  const pct   = (timeLeft / DURATION) * 100;
+  const tcol  = timeLeft > 20 ? "var(--ok)" : timeLeft > 10 ? "var(--acc)" : "var(--red)";
+  const myPts = score(validation);
+  const opPts = score(oppVal);
+
+  function setAns(cat, val) { setAnswers(p => ({ ...p, [cat]: val })); }
 
   // ─────────────────────────────────────────────────────────────────────────
   // SCREENS
   // ─────────────────────────────────────────────────────────────────────────
-
-  const CategoryInputs = ({ disabled }) => (
-    <div className="cats">
-      {CATS.map(cat => {
-        const val = answers[cat] || "";
-        const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
-        return (
-          <div key={cat} className={`crow${bad ? " bad" : ""}`}>
-            <span className="cico">{ICONS[cat]}</span>
-            <span className="clbl">{cat}</span>
-            <input className="cinp" placeholder={`${letter}…`}
-              value={val} onChange={e => changeAnswer(cat, e.target.value)}
-              disabled={disabled} autoComplete="off" />
-            <span className="cx">{bad ? "❌" : ""}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
 
   if (screen === "home") return (
     <div className="G"><div className="noise"/>
@@ -369,12 +334,8 @@ export default function Home() {
             <div className="lsub">Fill categories. Beat the clock. Win.</div>
           </div>
           <div className="menu">
-            <button className="btn btn-p" onClick={() => setScreen("solo-name")}>
-              <span className="bico">🎮</span> Play Solo
-            </button>
-            <button className="btn btn-o" onClick={() => { setError(""); setScreen("online-name"); }}>
-              <span className="bico">🌐</span> Play Online
-            </button>
+            <button className="btn btn-p" onClick={() => setScreen("solo-name")}><span className="bico">🎮</span> Play Solo</button>
+            <button className="btn btn-o" onClick={() => { setError(""); setScreen("online-name"); }}><span className="bico">🌐</span> Play Online</button>
           </div>
         </div>
       </div>
@@ -391,11 +352,9 @@ export default function Home() {
             <div className="flbl">YOUR NAME</div>
             <input className="tinp" placeholder="Enter your name…" value={playerName}
               onChange={e => setPlayerName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && playerName.trim() && startSolo()} />
+              onKeyDown={e => e.key==="Enter" && playerName.trim() && startSolo()} />
           </div>
-          <button className="btn btn-p" onClick={startSolo} disabled={!playerName.trim()}>
-            <span className="bico">🚀</span> Start Game
-          </button>
+          <button className="btn btn-p" onClick={startSolo} disabled={!playerName.trim()}><span className="bico">🚀</span> Start Game</button>
         </div>
       </div>
     </div>
@@ -411,12 +370,10 @@ export default function Home() {
             <div className="flbl">YOUR NAME</div>
             <input className="tinp" placeholder="Enter your name…" value={playerName}
               onChange={e => setPlayerName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && playerName.trim() && findMatch()} />
+              onKeyDown={e => e.key==="Enter" && playerName.trim() && findMatch()} />
           </div>
           {error && <div className="err">{error}</div>}
-          <button className="btn btn-p" onClick={findMatch} disabled={!playerName.trim()}>
-            <span className="bico">🔍</span> Find Match
-          </button>
+          <button className="btn btn-p" onClick={findMatch} disabled={!playerName.trim()}><span className="bico">🔍</span> Find Match</button>
         </div>
       </div>
     </div>
@@ -429,28 +386,21 @@ export default function Home() {
           <div className="stitle">Matchmaking</div>
           <div className="mcard">
             {queueStatus === "found" ? (
-              <>
-                <div style={{fontSize:48}}>🎮</div>
-                <div className="mfound">Opponent found!</div>
-                <div className="mstatus">Starting game…</div>
-              </>
+              <><div style={{fontSize:48}}>🎮</div><div className="mfound">Opponent found!</div><div className="mstatus">Starting game…</div></>
             ) : (
-              <>
-                <div className="pulse-ring"><span className="pulse-ico">🔍</span></div>
-                <div className="mcard-title">Finding a Match</div>
-                <div className="mstatus">Looking for an opponent for <strong style={{color:"var(--txt)"}}>{playerName}</strong>…</div>
-                <div className="spin" style={{width:24,height:24,borderWidth:2}}/>
-              </>
+              <><div className="pulse-ring"><span className="pulse-ico">🔍</span></div>
+              <div className="mcard-title">Finding a Match</div>
+              <div className="mstatus">Looking for an opponent for <strong style={{color:"var(--txt)"}}>{playerName}</strong>…</div>
+              <div className="spin" style={{width:24,height:24,borderWidth:2}}/></>
             )}
           </div>
-          {queueStatus !== "found" && (
-            <button className="btn btn-g" onClick={cancelMatchmaking}>Cancel</button>
-          )}
+          {queueStatus !== "found" && <button className="btn btn-g" onClick={cancelMatchmaking}>Cancel</button>}
         </div>
       </div>
     </div>
   );
 
+  // ── SOLO GAME — inputs inlined directly, no sub-component ─────────────────
   if (screen === "solo-game") return (
     <div className="G"><div className="noise"/>
       <div className="S">
@@ -469,11 +419,25 @@ export default function Home() {
           <div className="vwrap">
             <div className="spin"/>
             <div className="aibadge"><div className="aidot"/> AI is judging your answers…</div>
-            <div style={{color:"var(--mute)",fontSize:13}}>Checking each category for real validity</div>
           </div>
         ) : (
           <>
-            <CategoryInputs disabled={submitted} />
+            <div className="cats">
+              {CATS.map(cat => {
+                const val = answers[cat] || "";
+                const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
+                return (
+                  <div key={cat} className={`crow${bad?" bad":""}`}>
+                    <span className="cico">{ICONS[cat]}</span>
+                    <span className="clbl">{cat}</span>
+                    <input className="cinp" placeholder={`${letter}…`}
+                      value={val} onChange={e => setAns(cat, e.target.value)}
+                      disabled={submitted} autoComplete="off" />
+                    <span className="cx">{bad?"❌":""}</span>
+                  </div>
+                );
+              })}
+            </div>
             {!submitted && (
               <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
                 onClick={() => doSubmit(letter, null)}>Submit Answers</button>
@@ -496,17 +460,17 @@ export default function Home() {
           <div className="rlist" style={{width:"100%"}}>
             {CATS.map(cat => {
               const val = answers[cat] || "";
-              const v   = validation?.[cat];
-              const ok  = v?.valid ?? false;
+              const v = validation?.[cat];
+              const ok = v?.valid ?? false;
               return (
-                <div key={cat} className={`rrow ${ok ? "rv" : "ri"}`}>
+                <div key={cat} className={`rrow ${ok?"rv":"ri"}`}>
                   <span className="rico">{ICONS[cat]}</span>
                   <span className="rcat">{cat}</span>
                   <div className="rbody">
                     <div className="rans">{val || <span style={{color:"var(--mute)",fontSize:13}}>—</span>}</div>
                     {v?.reason && v.reason !== "empty" && <div className="rwhy">{v.reason}</div>}
                   </div>
-                  <span className={`rpts ${ok ? "pt-ok" : "pt-no"}`}>{ok ? "+10" : "0"}</span>
+                  <span className={`rpts ${ok?"pt-ok":"pt-no"}`}>{ok?"+10":"0"}</span>
                 </div>
               );
             })}
@@ -520,6 +484,7 @@ export default function Home() {
     </div>
   );
 
+  // ── ONLINE GAME — inputs inlined directly, no sub-component ───────────────
   if (screen === "online-game") return (
     <div className="G"><div className="noise"/>
       <div className="S">
@@ -547,7 +512,22 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <CategoryInputs disabled={false} />
+            <div className="cats">
+              {CATS.map(cat => {
+                const val = answers[cat] || "";
+                const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
+                return (
+                  <div key={cat} className={`crow${bad?" bad":""}`}>
+                    <span className="cico">{ICONS[cat]}</span>
+                    <span className="clbl">{cat}</span>
+                    <input className="cinp" placeholder={`${letter}…`}
+                      value={val} onChange={e => setAns(cat, e.target.value)}
+                      autoComplete="off" />
+                    <span className="cx">{bad?"❌":""}</span>
+                  </div>
+                );
+              })}
+            </div>
             <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
               onClick={() => doSubmit(letterR.current, roomR.current)}>Submit Answers</button>
           </>
@@ -569,15 +549,9 @@ export default function Home() {
               </div>
             </div>
             <div className="srow">
-              <div className="sside">
-                <div className="sslbl">{playerName.toUpperCase()}</div>
-                <div className="ssnum sy">{myPts}</div>
-              </div>
+              <div className="sside"><div className="sslbl">{playerName.toUpperCase()}</div><div className="ssnum sy">{myPts}</div></div>
               <div className="vsmid">VS</div>
-              <div className="sside">
-                <div className="sslbl">{oppName.toUpperCase()}</div>
-                <div className="ssnum so">{opPts}</div>
-              </div>
+              <div className="sside"><div className="sslbl">{oppName.toUpperCase()}</div><div className="ssnum so">{opPts}</div></div>
             </div>
             <div className="div"/>
             <div className="aibadge" style={{alignSelf:"center",fontSize:12}}><div className="aidot"/> AI-validated</div>
