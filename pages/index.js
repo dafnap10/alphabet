@@ -2,32 +2,29 @@ import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS & HELPERS  (module-level — never recreated)
+// CONSTANTS & HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-const CATS  = ["Country","City","Animal","Food","Celebrity","Brand","Object"];
-const ICONS = { Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐", Brand:"💼", Object:"📦" };
+const CATS    = ["Country","City","Animal","Food","Celebrity","Brand","Object"];
+const ICONS   = { Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐", Brand:"💼", Object:"📦" };
 const LETTERS = "ABCDEFGHIJKLMNOPRSTW";
 
-function makeId()       { return Math.random().toString(36).substring(2, 10); }
-function pickLetter()   { return LETTERS[Math.floor(Math.random() * LETTERS.length)]; }
-function score(v)       { return v ? Object.values(v).reduce((s,e) => s+(e?.valid?10:0), 0) : 0; }
+function makeId()     { return Math.random().toString(36).substring(2,10); }
+function pickLetter() { return LETTERS[Math.floor(Math.random()*LETTERS.length)]; }
+function score(v)     { return v ? Object.values(v).reduce((s,e)=>s+(e?.valid?10:0),0) : 0; }
 
 async function apiPost(path, body) {
   const r = await fetch(path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
   const t = await r.text();
-  if (!t) throw new Error(`Empty response from ${path} (${r.status})`);
+  if (!t) throw new Error(`Empty response (${r.status})`);
   const j = JSON.parse(t);
   if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
   return j;
 }
-
 async function apiGet(path) {
   const r = await fetch(path);
   const t = await r.text();
   if (!t) return null;
-  const j = JSON.parse(t);
-  if (!r.ok) return null;
-  return j;
+  try { const j = JSON.parse(t); return r.ok ? j : null; } catch { return null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +53,8 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .btn-o:hover{border-color:var(--acc);color:var(--acc)}
 .btn-g{background:var(--surf2);color:var(--txt)}
 .btn-g:hover{background:var(--brd)}
+.btn-share{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;box-shadow:0 0 20px rgba(168,85,247,.3)}
+.btn-share:hover{background:linear-gradient(135deg,#6d28d9,#9333ea)}
 .bico{font-size:20px}
 .back{background:none;border:none;color:var(--mute);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:flex;align-items:center;gap:6px;padding:4px 0}
 .back:hover{color:var(--txt)}
@@ -83,7 +82,7 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .spin{width:40px;height:40px;border:3px solid var(--brd);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.sscrn{display:flex;flex-direction:column;align-items:center;padding:32px 0;gap:20px}
+.sscrn{display:flex;flex-direction:column;align-items:center;padding:32px 0;gap:16px}
 .sbig{font-family:'Bebas Neue',sans-serif;font-size:120px;line-height:1;color:var(--acc);filter:drop-shadow(0 0 40px rgba(232,255,71,.6));animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
 @keyframes pop{from{transform:scale(.3) rotate(-10deg);opacity:0}to{transform:scale(1);opacity:1}}
 .slbl{color:var(--mute);letter-spacing:3px;font-size:12px}
@@ -106,6 +105,22 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .tinp:focus{border-color:var(--acc)}
 .err{color:var(--red);font-size:13px;text-align:center;padding:8px;background:rgba(255,71,87,.1);border-radius:6px}
 .div{height:1px;background:var(--brd);margin:4px 0}
+/* online mode picker */
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode-card{background:var(--surf);border:2px solid var(--brd);border-radius:10px;padding:20px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;transition:all .15s;text-align:center}
+.mode-card:hover{border-color:var(--acc);background:var(--surf2)}
+.mode-card.active{border-color:var(--acc);background:rgba(232,255,71,.07)}
+.mode-ico{font-size:32px}
+.mode-title{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px}
+.mode-desc{font-size:11px;color:var(--mute);line-height:1.4}
+/* lobby */
+.lobby-box{background:var(--surf2);border:1px dashed var(--brd);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.lobby-code{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:8px;color:var(--acc);text-align:center}
+.lobby-hint{color:var(--mute);font-size:12px;text-align:center}
+.lobby-link{background:var(--surf);border:1px solid var(--brd);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--mute);word-break:break-all;cursor:pointer;transition:border-color .2s}
+.lobby-link:hover{border-color:var(--acc);color:var(--acc)}
+.copied-badge{display:inline-block;background:rgba(45,255,138,.15);color:var(--ok);border:1px solid var(--ok);border-radius:4px;font-size:11px;padding:2px 8px;font-weight:600}
+/* matchmaking */
 .mcard{background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:32px 24px;display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center}
 .mcard-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px}
 .mstatus{font-size:14px;color:var(--mute)}
@@ -114,6 +129,7 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .pulse-ring::after{content:'';position:absolute;inset:-8px;border-radius:50%;border:2px solid var(--acc);opacity:.4;animation:ring 1.5s ease-out infinite}
 @keyframes ring{0%{transform:scale(1);opacity:.4}100%{transform:scale(1.4);opacity:0}}
 .pulse-ico{font-size:32px}
+/* vs / results */
 .vsscrn{display:flex;flex-direction:column;gap:14px;padding:24px 0}
 .vshdr{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--mute);text-align:center}
 .bnr{text-align:center;padding:16px;border-radius:8px}
@@ -135,6 +151,9 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .cmpc.cl{opacity:.4}
 .cmpw{font-size:10px;color:var(--mute);margin-top:2px;font-style:italic}
 .cmpico{text-align:center;font-size:16px;padding-top:10px}
+/* share toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ok);color:#0a0a0f;font-weight:700;font-size:14px;padding:10px 20px;border-radius:8px;z-index:999;animation:fadeup .3s ease}
+@keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,16 +173,25 @@ export default function Home() {
   const [oppVal,      setOppVal]      = useState(null);
   const [error,       setError]       = useState("");
   const [queueStatus, setQueueStatus] = useState("searching");
+  // online mode: "random" | "private"
+  const [onlineMode,  setOnlineMode]  = useState("random");
+  // private lobby
+  const [lobbyCode,   setLobbyCode]   = useState("");
+  const [joinCode,    setJoinCode]    = useState("");
+  const [lobbyCopied, setLobbyCopied] = useState(false);
+  // share score
+  const [toast,       setToast]       = useState("");
 
-  const timerRef   = useRef(null);
-  const pollRef    = useRef(null);
-  const pollAnsRef = useRef(null);
-  const answersR   = useRef({});
-  const letterR    = useRef("B");
-  const roomR      = useRef("");
-  const nameR      = useRef("");
-  const myIdR      = useRef("");
-  const submittedR = useRef(false);
+  const timerRef    = useRef(null);
+  const pollRef     = useRef(null);
+  const pollAnsRef  = useRef(null);
+  const answersR    = useRef({});
+  const letterR     = useRef("B");
+  const roomR       = useRef("");
+  const nameR       = useRef("");
+  const myIdR       = useRef(makeId()); // stable per session
+  const submittedR  = useRef(false);
+  const inputRefs   = useRef([]); // for Enter-to-next-field
 
   useEffect(() => { answersR.current   = answers;    }, [answers]);
   useEffect(() => { letterR.current    = letter;     }, [letter]);
@@ -183,7 +211,19 @@ export default function Home() {
     clearInterval(pollAnsRef.current);
   }, []);
 
-  // ── Timer ──────────────────────────────────────────────────────────────────
+  // ── Check for lobby invite link on load ──────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get("lobby");
+    if (invite) {
+      setJoinCode(invite.toUpperCase());
+      setOnlineMode("private");
+      setScreen("online-name");
+    }
+  }, []);
+
+  // ── Timer ─────────────────────────────────────────────────────────────────
   const DURATION = 60;
   function startTimer(onEnd) {
     clearInterval(timerRef.current);
@@ -200,7 +240,7 @@ export default function Home() {
     }, 1000);
   }
 
-  // ── Submit + validate ──────────────────────────────────────────────────────
+  // ── Submit + validate (API key stays server-side) ─────────────────────────
   async function doSubmit(l, roomId) {
     if (submittedR.current) return;
     clearInterval(timerRef.current);
@@ -212,11 +252,10 @@ export default function Home() {
     try {
       result = await apiPost("/api/validate", { answers: answersR.current, letter: l });
     } catch {
-      // fallback
       result = {};
       CATS.forEach(c => {
         const v = (answersR.current[c]||"").trim();
-        const ok = v.length >= 2 && v.toLowerCase().startsWith(l.toLowerCase());
+        const ok = v.length >= 3 && v.toLowerCase().startsWith(l.toLowerCase());
         result[c] = { valid: ok, reason: ok ? "Valid" : "Invalid or empty" };
       });
     }
@@ -233,7 +272,7 @@ export default function Home() {
     }
   }
 
-  // ── Solo ───────────────────────────────────────────────────────────────────
+  // ── Solo ──────────────────────────────────────────────────────────────────
   function startSolo() {
     const l = pickLetter();
     setLetter(l); letterR.current = l;
@@ -242,12 +281,11 @@ export default function Home() {
     startTimer(() => doSubmit(l, null));
   }
 
-  // ── Matchmaking ────────────────────────────────────────────────────────────
+  // ── Random matchmaking ────────────────────────────────────────────────────
   async function findMatch() {
     if (!playerName.trim()) return setError("Enter your name first");
     setError("");
-    const myId = makeId();
-    myIdR.current = myId;
+    const myId = myIdR.current;
     setQueueStatus("searching");
     setScreen("matchmaking");
 
@@ -256,17 +294,16 @@ export default function Home() {
       if (result.matched) {
         launchGame(result.room, result.opponentName);
       } else {
-        // Poll — each poll also actively tries to match
         pollRef.current = setInterval(async () => {
           try {
             const ps = await apiGet(`/api/match-status?playerId=${myId}`);
             if (ps?.matched && ps.room) {
               clearInterval(pollRef.current);
-              const opp = (ps.room.players || []).find(p => p !== nameR.current) || "Opponent";
+              const opp = (ps.room.players||[]).find(p => p !== nameR.current) || "Opponent";
               setQueueStatus("found");
               setTimeout(() => launchGame(ps.room, opp), 800);
             }
-          } catch { /* keep polling */ }
+          } catch {}
         }, 2000);
       }
     } catch (e) {
@@ -275,6 +312,63 @@ export default function Home() {
     }
   }
 
+  // ── Private lobby: create ─────────────────────────────────────────────────
+  async function createLobby() {
+    if (!playerName.trim()) return setError("Enter your name first");
+    setError("");
+    try {
+      const res = await apiPost("/api/lobby", { action:"create", playerId: myIdR.current, playerName });
+      setLobbyCode(res.lobbyCode);
+      setLobbyCopied(false);
+      setScreen("lobby-wait");
+      // Poll until guest joins
+      pollRef.current = setInterval(async () => {
+        try {
+          const ps = await apiPost("/api/lobby", { action:"poll", lobbyCode: res.lobbyCode, playerId: myIdR.current, playerName });
+          if (ps.ready) {
+            clearInterval(pollRef.current);
+            setQueueStatus("found");
+            setTimeout(() => launchGame(ps.room, ps.opponentName), 800);
+          }
+        } catch {}
+      }, 2000);
+    } catch (e) {
+      setError("Failed to create lobby: " + e.message);
+    }
+  }
+
+  // ── Private lobby: join ───────────────────────────────────────────────────
+  async function joinLobby() {
+    if (!playerName.trim()) return setError("Enter your name first");
+    if (!joinCode.trim())   return setError("Enter a lobby code");
+    setError("");
+    try {
+      const res = await apiPost("/api/lobby", {
+        action: "join", lobbyCode: joinCode.trim().toUpperCase(),
+        playerId: myIdR.current, playerName
+      });
+      if (res.joined) {
+        launchGame(res.room, res.opponentName);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function getLobbyLink() {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/?lobby=${lobbyCode}`;
+  }
+
+  async function copyLobbyLink() {
+    try {
+      await navigator.clipboard.writeText(getLobbyLink());
+      setLobbyCopied(true);
+      setTimeout(() => setLobbyCopied(false), 2500);
+    } catch {}
+  }
+
+  // ── Launch game ───────────────────────────────────────────────────────────
   function launchGame(room, opponentName) {
     roomR.current = room.id;
     setOppName(opponentName);
@@ -291,7 +385,7 @@ export default function Home() {
     setScreen("online-name");
   }
 
-  // ── Poll for opponent results after submitting ─────────────────────────────
+  // ── Poll opponent results ─────────────────────────────────────────────────
   useEffect(() => {
     if (screen !== "online-game" || !submitted || validating) return;
     const roomId = roomR.current;
@@ -300,25 +394,81 @@ export default function Home() {
       try {
         const room = await apiGet(`/api/room?id=${roomId}`);
         if (!room) return;
-        const opp = (room.players || []).find(p => p !== nameR.current);
+        const opp = (room.players||[]).find(p => p !== nameR.current);
         if (opp && room.answers?.[opp] && room.validation?.[opp]) {
           clearInterval(pollAnsRef.current);
           setOppAnswers(room.answers[opp]);
           setOppVal(room.validation[opp]);
           setScreen("online-score");
         }
-      } catch { /* keep polling */ }
+      } catch {}
     }, 2000);
     return () => clearInterval(pollAnsRef.current);
   }, [screen, submitted, validating]);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
+  // ── Share score ───────────────────────────────────────────────────────────
+  function shareScore(pts, total, ltr, isOnline, won, tie) {
+    const emoji = isOnline ? (won ? "🏆" : tie ? "🤝" : "😤") : "🎮";
+    const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
+    const text = isOnline
+      ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}\nCan you beat me? ${window.location.origin}`
+      : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}\nTry to beat it! ${window.location.origin}`;
+
+    if (navigator.share) {
+      navigator.share({ title: "Alphabet Game", text }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        setToast("Score copied to clipboard!");
+        setTimeout(() => setToast(""), 2500);
+      });
+    }
+  }
+
+  // ── Enter key: move to next category input ────────────────────────────────
+  function handleCatKeyDown(e, idx) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const next = inputRefs.current[idx + 1];
+      if (next) next.focus();
+    }
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────
   const pct   = (timeLeft / DURATION) * 100;
   const tcol  = timeLeft > 20 ? "var(--ok)" : timeLeft > 10 ? "var(--acc)" : "var(--red)";
   const myPts = score(validation);
   const opPts = score(oppVal);
-
+  const maxPts = CATS.length * 10;
   function setAns(cat, val) { setAnswers(p => ({ ...p, [cat]: val })); }
+
+  // ── Category input rows (inlined JSX, no sub-component) ───────────────────
+  function catRows(disabled) {
+    return (
+      <div className="cats">
+        {CATS.map((cat, idx) => {
+          const val = answers[cat] || "";
+          const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
+          return (
+            <div key={cat} className={`crow${bad?" bad":""}`}>
+              <span className="cico">{ICONS[cat]}</span>
+              <span className="clbl">{cat}</span>
+              <input
+                className="cinp"
+                placeholder={`${letter}…`}
+                value={val}
+                onChange={e => setAns(cat, e.target.value)}
+                onKeyDown={e => handleCatKeyDown(e, idx)}
+                disabled={disabled}
+                autoComplete="off"
+                ref={el => { inputRefs.current[idx] = el; }}
+              />
+              <span className="cx">{bad?"❌":""}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // SCREENS
@@ -326,6 +476,7 @@ export default function Home() {
 
   if (screen === "home") return (
     <div className="G"><div className="noise"/>
+      {toast && <div className="toast">{toast}</div>}
       <div className="S">
         <div className="home">
           <div className="logo">
@@ -360,25 +511,66 @@ export default function Home() {
     </div>
   );
 
+  // ── Online setup: choose mode ─────────────────────────────────────────────
   if (screen === "online-name") return (
     <div className="G"><div className="noise"/>
       <div className="S">
         <div className="oscr">
           <button className="back" onClick={() => setScreen("home")}>← Back</button>
           <div className="stitle">Play Online</div>
+
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <div className="flbl">YOUR NAME</div>
             <input className="tinp" placeholder="Enter your name…" value={playerName}
-              onChange={e => setPlayerName(e.target.value)}
-              onKeyDown={e => e.key==="Enter" && playerName.trim() && findMatch()} />
+              onChange={e => setPlayerName(e.target.value)} />
           </div>
+
+          <div>
+            <div className="flbl" style={{marginBottom:10}}>GAME MODE</div>
+            <div className="mode-grid">
+              <div className={`mode-card${onlineMode==="random"?" active":""}`} onClick={() => setOnlineMode("random")}>
+                <span className="mode-ico">🎲</span>
+                <div className="mode-title">Random</div>
+                <div className="mode-desc">Match with anyone online instantly</div>
+              </div>
+              <div className={`mode-card${onlineMode==="private"?" active":""}`} onClick={() => setOnlineMode("private")}>
+                <span className="mode-ico">🔒</span>
+                <div className="mode-title">Private</div>
+                <div className="mode-desc">Create a lobby and invite a friend</div>
+              </div>
+            </div>
+          </div>
+
+          {onlineMode === "private" && (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div className="flbl">HAVE A CODE? JOIN INSTEAD</div>
+              <input className="tinp" placeholder="Enter lobby code…" value={joinCode}
+                onChange={e => setJoinCode(e.target.value.toUpperCase())} maxLength={8}
+                style={{letterSpacing:4,textTransform:"uppercase",textAlign:"center",fontWeight:700}} />
+            </div>
+          )}
+
           {error && <div className="err">{error}</div>}
-          <button className="btn btn-p" onClick={findMatch} disabled={!playerName.trim()}><span className="bico">🔍</span> Find Match</button>
+
+          {onlineMode === "random" ? (
+            <button className="btn btn-p" onClick={findMatch} disabled={!playerName.trim()}>
+              <span className="bico">🔍</span> Find Match
+            </button>
+          ) : joinCode.trim().length >= 4 ? (
+            <button className="btn btn-p" onClick={joinLobby} disabled={!playerName.trim()}>
+              <span className="bico">🚪</span> Join Lobby
+            </button>
+          ) : (
+            <button className="btn btn-p" onClick={createLobby} disabled={!playerName.trim()}>
+              <span className="bico">🏠</span> Create Private Lobby
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 
+  // ── Waiting for random match ──────────────────────────────────────────────
   if (screen === "matchmaking") return (
     <div className="G"><div className="noise"/>
       <div className="S">
@@ -400,7 +592,48 @@ export default function Home() {
     </div>
   );
 
-  // ── SOLO GAME — inputs inlined directly, no sub-component ─────────────────
+  // ── Private lobby waiting room ────────────────────────────────────────────
+  if (screen === "lobby-wait") {
+    const link = getLobbyLink();
+    return (
+      <div className="G"><div className="noise"/>
+        <div className="S">
+          <div className="oscr">
+            <button className="back" onClick={() => { clearInterval(pollRef.current); setScreen("online-name"); }}>← Cancel</button>
+            <div className="stitle">Private Lobby</div>
+
+            {queueStatus === "found" ? (
+              <div className="mcard">
+                <div style={{fontSize:48}}>🎮</div>
+                <div className="mfound">Friend joined!</div>
+                <div className="mstatus">Starting game…</div>
+              </div>
+            ) : (
+              <>
+                <div className="lobby-box">
+                  <div className="lobby-hint">LOBBY CODE</div>
+                  <div className="lobby-code">{lobbyCode}</div>
+                  <div className="lobby-hint">Share this link with your friend:</div>
+                  <div className="lobby-link" onClick={copyLobbyLink} title="Click to copy">
+                    {link}
+                  </div>
+                  <button className="btn btn-o" style={{fontSize:13,padding:"10px 16px"}} onClick={copyLobbyLink}>
+                    {lobbyCopied ? <><span className="copied-badge">✓ Copied!</span></> : <><span className="bico">📋</span> Copy Invite Link</>}
+                  </button>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"24px 0"}}>
+                  <div className="spin"/>
+                  <div style={{color:"var(--mute)",fontSize:13}}>Waiting for your friend to join…</div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Solo game ─────────────────────────────────────────────────────────────
   if (screen === "solo-game") return (
     <div className="G"><div className="noise"/>
       <div className="S">
@@ -422,22 +655,7 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <div className="cats">
-              {CATS.map(cat => {
-                const val = answers[cat] || "";
-                const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
-                return (
-                  <div key={cat} className={`crow${bad?" bad":""}`}>
-                    <span className="cico">{ICONS[cat]}</span>
-                    <span className="clbl">{cat}</span>
-                    <input className="cinp" placeholder={`${letter}…`}
-                      value={val} onChange={e => setAns(cat, e.target.value)}
-                      disabled={submitted} autoComplete="off" />
-                    <span className="cx">{bad?"❌":""}</span>
-                  </div>
-                );
-              })}
-            </div>
+            {catRows(submitted)}
             {!submitted && (
               <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
                 onClick={() => doSubmit(letter, null)}>Submit Answers</button>
@@ -448,14 +666,20 @@ export default function Home() {
     </div>
   );
 
+  // ── Solo score ────────────────────────────────────────────────────────────
   if (screen === "solo-score") return (
     <div className="G"><div className="noise"/>
+      {toast && <div className="toast">{toast}</div>}
       <div className="S">
         <div className="sscrn">
           <div className="slbl">YOUR SCORE</div>
           <div className="sbig">{myPts}</div>
-          <div className="smax">out of {CATS.length * 10} · letter {letter}</div>
+          <div className="smax">out of {maxPts} · letter {letter}</div>
           <div className="aibadge" style={{fontSize:12}}><div className="aidot"/> AI-validated</div>
+          <button className="btn btn-share" style={{width:"100%"}}
+            onClick={() => shareScore(myPts, maxPts, letter, false)}>
+            <span className="bico">📤</span> Share My Score
+          </button>
           <div className="div" style={{width:"100%"}}/>
           <div className="rlist" style={{width:"100%"}}>
             {CATS.map(cat => {
@@ -484,7 +708,7 @@ export default function Home() {
     </div>
   );
 
-  // ── ONLINE GAME — inputs inlined directly, no sub-component ───────────────
+  // ── Online game ───────────────────────────────────────────────────────────
   if (screen === "online-game") return (
     <div className="G"><div className="noise"/>
       <div className="S">
@@ -512,22 +736,7 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <div className="cats">
-              {CATS.map(cat => {
-                const val = answers[cat] || "";
-                const bad = val.length >= 1 && !val.toLowerCase().startsWith(letter.toLowerCase());
-                return (
-                  <div key={cat} className={`crow${bad?" bad":""}`}>
-                    <span className="cico">{ICONS[cat]}</span>
-                    <span className="clbl">{cat}</span>
-                    <input className="cinp" placeholder={`${letter}…`}
-                      value={val} onChange={e => setAns(cat, e.target.value)}
-                      autoComplete="off" />
-                    <span className="cx">{bad?"❌":""}</span>
-                  </div>
-                );
-              })}
-            </div>
+            {catRows(false)}
             <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
               onClick={() => doSubmit(letterR.current, roomR.current)}>Submit Answers</button>
           </>
@@ -536,10 +745,12 @@ export default function Home() {
     </div>
   );
 
+  // ── Online score ──────────────────────────────────────────────────────────
   if (screen === "online-score") {
     const won = myPts > opPts, tie = myPts === opPts;
     return (
       <div className="G"><div className="noise"/>
+        {toast && <div className="toast">{toast}</div>}
         <div className="S">
           <div className="vsscrn">
             <div className="vshdr">RESULTS · {letter}</div>
@@ -553,6 +764,10 @@ export default function Home() {
               <div className="vsmid">VS</div>
               <div className="sside"><div className="sslbl">{oppName.toUpperCase()}</div><div className="ssnum so">{opPts}</div></div>
             </div>
+            <button className="btn btn-share" style={{width:"100%"}}
+              onClick={() => shareScore(myPts, maxPts, letter, true, won, tie)}>
+              <span className="bico">📤</span> Share My Score
+            </button>
             <div className="div"/>
             <div className="aibadge" style={{alignSelf:"center",fontSize:12}}><div className="aidot"/> AI-validated</div>
             <div className="cmp">
