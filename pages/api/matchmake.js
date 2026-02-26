@@ -53,6 +53,16 @@ export default async function handler(req, res) {
       const room = mine[0];
       const opp = (room.players || []).find((p) => p !== playerName) || "Opponent";
       const matched = (room.player_ids || []).length >= 2 && room.status !== "waiting";
+
+      // Best-effort: if we're already matched, remove both players from queue.
+      if (matched) {
+        try {
+          const ids = Array.isArray(room.player_ids) ? room.player_ids : [];
+          if (ids.length) await sb.from("queue").delete().in("player_id", ids);
+        } catch {
+          // ignore
+        }
+      }
       return res.status(200).json({ matched, room, opponentName: opp });
     }
 
@@ -91,6 +101,13 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (!joinErr && joined) {
+          // Best-effort: remove both players from queue.
+          try {
+            const ids = Array.isArray(joined.player_ids) ? joined.player_ids : [];
+            if (ids.length) await sb.from("queue").delete().in("player_id", ids);
+          } catch {
+            // ignore
+          }
           const opp = (joined.players || []).find((p) => p !== playerName) || "Opponent";
           return res.status(200).json({ matched: true, room: joined, opponentName: opp });
         }

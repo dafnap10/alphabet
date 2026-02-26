@@ -356,7 +356,9 @@ export default function Home() {
       } else {
         pollRef.current = setInterval(async () => {
           try {
-            const ps = await apiGet(`/api/match-status?playerId=${myId}`);
+            const ps = await apiGet(
+              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(name)}`
+            );
             if (ps?.matched && ps.room) {
               clearInterval(pollRef.current);
               const opp = (ps.room.players||[]).find(p => p !== nameR.current) || "Opponent";
