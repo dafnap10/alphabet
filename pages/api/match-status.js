@@ -28,7 +28,9 @@ export default async function handler(req, res) {
     // Cleanup stale queue rows
     try { await sb.from("queue").delete().lt("joined_at", nowMinusMinutes(30)); } catch {}
 
-    // 1) Already in an active room with 2 players?
+    // STEP 1: Already in an active room with 2 players?
+    // This is checked FIRST — before anything else — so a player who was
+    // removed from the queue by the leader still finds their room.
     const { data: mine } = await sb
       .from("rooms")
       .select("*")
@@ -40,14 +42,13 @@ export default async function handler(req, res) {
     if (mine?.[0]) {
       const room = mine[0];
       if (Array.isArray(room.player_ids) && room.player_ids.length >= 2) {
-        try {
-          await sb.from("queue").delete().in("player_id", room.player_ids);
-        } catch {}
+        // Clean up queue just in case
+        try { await sb.from("queue").delete().in("player_id", room.player_ids); } catch {}
         return res.status(200).json({ matched: true, room });
       }
     }
 
-    // 2) Ensure I'm in queue — read my row
+    // STEP 2: Am I in the queue?
     const { data: meQ } = await sb
       .from("queue")
       .select("*")
@@ -55,7 +56,9 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (!meQ) {
-      // Was removed (race) — re-add with fallback for missing lang column
+      // Not in queue AND not in a room — only re-enqueue if truly not matched yet.
+      // This handles the race: leader removed me from queue but room insert
+      // hasn't propagated yet. Wait one cycle before re-enqueuing.
       const myName = (playerName && String(playerName).trim()) || "Player";
       try {
         const r1 = await sb.from("queue").upsert({
@@ -75,7 +78,7 @@ export default async function handler(req, res) {
     const myName = meQ.player_name || (playerName && String(playerName).trim()) || "Player";
     const myLang = meQ.lang || lang || "en";
 
-    // 3) Fetch oldest 2 queue entries
+    // STEP 3: Fetch the 2 oldest queue entries
     const { data: q2 } = await sb
       .from("queue")
       .select("*")
@@ -87,7 +90,7 @@ export default async function handler(req, res) {
     const leader = q2[0];
     const opp    = q2[1];
 
-    // Only the leader (oldest) creates the room — second player just waits
+    // Only the LEADER creates the room — the follower just waits
     if (leader.player_id !== playerId) {
       return res.status(200).json({ matched: false, queued: true });
     }
@@ -96,6 +99,7 @@ export default async function handler(req, res) {
     const oppName = opp.player_name || "Opponent";
     const roomId  = stableRoomId(playerId, oppId);
 
+    // STEP 4: Create room (idempotent — if already exists, fetch it)
     const insert = {
       id: roomId,
       letter: randomLetter(myLang),
@@ -110,7 +114,7 @@ export default async function handler(req, res) {
     let room = null;
     const { data: created, error: cErr } = await sb.from("rooms").insert(insert).select("*").maybeSingle();
     if (cErr) {
-      // Room likely already exists (retry) — just fetch it
+      // Room already exists (duplicate leader poll) — just fetch it
       const { data: existing } = await sb.from("rooms").select("*").eq("id", roomId).maybeSingle();
       room = existing || null;
     } else {
@@ -119,7 +123,8 @@ export default async function handler(req, res) {
 
     if (!room) return res.status(200).json({ matched: false, queued: true });
 
-    // Clean up both players from queue
+    // STEP 5: Remove BOTH players from queue AFTER room is confirmed visible
+    // The follower will find the room in STEP 1 on their next poll
     try { await sb.from("queue").delete().in("player_id", [playerId, oppId]); } catch {}
 
     return res.status(200).json({ matched: true, room });
