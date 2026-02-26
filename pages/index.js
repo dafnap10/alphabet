@@ -1261,9 +1261,19 @@ export default function Home() {
               </div>
             </div>
             <div className="srow">
-              <div className="sside"><div className="sslbl">{playerName.toUpperCase()}</div><div className="ssnum sy">{myPts}</div></div>
-              <div className="vsmid">{t.vs}</div>
-              <div className="sside"><div className="sslbl">{oppName.toUpperCase()}</div><div className="ssnum so">{opPts}</div></div>
+              {lang === "he" ? (
+                <>
+                  <div className="sside"><div className="sslbl">{oppName.toUpperCase()}</div><div className="ssnum so">{opPts}</div></div>
+                  <div className="vsmid">{t.vs}</div>
+                  <div className="sside"><div className="sslbl">{playerName.toUpperCase()}</div><div className="ssnum sy">{myPts}</div></div>
+                </>
+              ) : (
+                <>
+                  <div className="sside"><div className="sslbl">{playerName.toUpperCase()}</div><div className="ssnum sy">{myPts}</div></div>
+                  <div className="vsmid">{t.vs}</div>
+                  <div className="sside"><div className="sslbl">{oppName.toUpperCase()}</div><div className="ssnum so">{opPts}</div></div>
+                </>
+              )}
             </div>
             <button className="btn btn-share" style={{width:"100%"}}
               onClick={()=>shareScore(myPts,maxPts,letter,true,won,tie)}>
