@@ -834,7 +834,23 @@ export default function Home() {
   }
 
   // ── Toggle language ───────────────────────────────────────────────────────
-  function toggleLang() { setLang(l => l==="en" ? "he" : "en"); }
+  function toggleLang() {
+    setLang(l => {
+      const next = l === "en" ? "he" : "en";
+      langR.current = next;
+      // Update URL so lang persists on refresh (but don't add lobby params)
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        params.set("lang", next);
+        // Remove lobby/host params — user is on the main app, not an invite
+        params.delete("lobby");
+        params.delete("host");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.origin + "/" + (qs ? "?" + qs : ""));
+      }
+      return next;
+    });
+  }
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const pct   = (timeLeft / DURATION) * 100;
