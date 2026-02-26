@@ -205,7 +205,7 @@ export default function Home() {
   const letterR     = useRef("B");
   const roomR       = useRef("");
   const nameR       = useRef("");
-  const myIdR       = useRef(makeId()); // stable per session
+  const myIdR       = useRef(""); // stable per device (localStorage)
   const submittedR  = useRef(false);
   const inputRefs   = useRef([]); // for Enter-to-next-field
 
@@ -219,6 +219,23 @@ export default function Home() {
     el.textContent = CSS;
     document.head.appendChild(el);
     return () => el.remove();
+  }, []);
+
+  // Persist a stable player id across refreshes.
+  // This is critical for private rooms: rejoining, finished-state sync, and rematch voting.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const KEY = "alphabetush_player_id";
+      let pid = window.localStorage.getItem(KEY);
+      if (!pid) {
+        pid = makeId();
+        window.localStorage.setItem(KEY, pid);
+      }
+      myIdR.current = pid;
+    } catch {
+      if (!myIdR.current) myIdR.current = makeId();
+    }
   }, []);
 
   useEffect(() => () => {
@@ -562,7 +579,8 @@ async function cancelMatchmaking() {
   async function shareScore(pts, total, ltr, isOnline, won, tie) {
     const emoji = isOnline ? (won ? "🏆" : tie ? "🤝" : "😤") : "🎮";
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
-    const url = typeof window !== "undefined" ? window.location.origin : "";
+    // Use a clean canonical URL (avoid query strings like ?lobby=...)
+    const url = typeof window !== "undefined" ? (window.location.origin + "/") : "";
     const text = isOnline
       ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}
 Can you beat me?`
