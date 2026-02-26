@@ -11,13 +11,16 @@
 // 5) If claimed, create room with both players and return matched
 
 import { getSupabaseAdmin } from "../../lib/supabase";
+import crypto from "crypto";
 
 function randomLetter() {
   return "ABCDEFGHIJKLMNOPRSTW"[Math.floor(Math.random() * 20)];
 }
 
-function makeId() {
-  return Math.random().toString(36).substring(2, 10);
+function stableRoomId(a, b) {
+  // Deterministic id so retries are idempotent.
+  const [x, y] = [String(a), String(b)].sort();
+  return crypto.createHash("sha1").update(`${x}:${y}`).digest("hex").slice(0, 12);
 }
 
 function nowMinusMinutes(min) {
@@ -87,61 +90,62 @@ export default async function handler(req, res) {
 
     const myName = meQ.player_name || (playerName && String(playerName).trim()) || "Player";
 
-    // 3) Find the oldest other queued player.
-    const { data: oppList } = await sb
+    // 3) Leader-based pairing to avoid race windows that strand the second player.
+    // Only the OLDEST queued player creates the match with the 2nd oldest.
+    const { data: q2 } = await sb
       .from("queue")
       .select("player_id,player_name,joined_at")
-      .neq("player_id", playerId)
       .order("joined_at", { ascending: true })
-      .limit(1);
+      .limit(2);
 
-    if (!oppList || !oppList[0]) {
+    if (!q2 || q2.length < 2) return res.status(200).json({ matched: false, queued: true });
+
+    const leader = q2[0];
+    const opp = q2[1];
+
+    // If I'm not the leader, just keep polling until the leader creates the room.
+    if (leader.player_id !== playerId) {
       return res.status(200).json({ matched: false, queued: true });
     }
 
-    const opp = oppList[0];
     const oppId = opp.player_id;
     const oppName = opp.player_name || "Opponent";
 
-    // 4) Claim the match by deleting both queue rows.
-    // Only one server call across both players will succeed with count === 2.
-    const { count: delCount, error: delErr } = await sb
-      .from("queue")
-      .delete({ count: "exact" })
-      .in("player_id", [playerId, oppId]);
-
-    if (delErr || delCount !== 2) {
-      // Someone else matched us first; keep polling.
-      return res.status(200).json({ matched: false, queued: true });
-    }
-
-    // 5) Create the room.
-    const roomId = makeId();
+    // 4) Create (or reuse) a deterministic room id so retries are safe.
+    const roomId = stableRoomId(playerId, oppId);
     const insert = {
       id: roomId,
       letter: randomLetter(),
       status: "playing",
-      players: [oppName, myName],
-      player_ids: [oppId, playerId],
+      players: [myName, oppName],
+      player_ids: [playerId, oppId],
       answers: {},
       validation: {},
       created_at: new Date().toISOString(),
     };
 
+    // Try insert; if it already exists, fetch it.
+    let room = null;
     const { data: created, error: cErr } = await sb.from("rooms").insert(insert).select("*").maybeSingle();
-
-    if (cErr || !created) {
-      // Put both players back into queue (best-effort) so they can match again.
-      try {
-        await sb.from("queue").upsert([
-          { player_id: playerId, player_name: myName, joined_at: new Date().toISOString() },
-          { player_id: oppId, player_name: oppName, joined_at: new Date().toISOString() },
-        ]);
-      } catch {}
-      return res.status(500).json({ error: "Failed to create room: " + (cErr?.message || "unknown") });
+    if (cErr) {
+      const { data: existing } = await sb
+        .from("rooms")
+        .select("*")
+        .eq("id", roomId)
+        .maybeSingle();
+      room = existing || null;
+    } else {
+      room = created || null;
     }
 
-    return res.status(200).json({ matched: true, room: created });
+    if (!room) return res.status(200).json({ matched: false, queued: true });
+
+    // 5) Cleanup queue AFTER the room is visible.
+    try {
+      await sb.from("queue").delete().in("player_id", [playerId, oppId]);
+    } catch {}
+
+    return res.status(200).json({ matched: true, room });
   } catch (err) {
     console.error("match-status error:", err);
     return res.status(500).json({ error: String(err.message || err) });
