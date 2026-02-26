@@ -341,6 +341,11 @@ export default function Home() {
     if (!playerName.trim()) return setError("Enter your name first");
     setError("");
     const myId = myIdR.current;
+
+    // IMPORTANT: If the user previously played a private game (or refreshed during a game),
+    // `player_rooms` may still bind them to an old room. Clear that so random matchmaking works.
+    try { await apiPost("/api/leave-room", { playerId: myId }); } catch {}
+
     setQueueStatus("searching");
     setScreen("matchmaking");
 
@@ -372,6 +377,9 @@ export default function Home() {
     if (!playerName.trim()) return setError("Enter your name first");
     setError("");
     try {
+      // Clear any previous random/private room binding before creating a new lobby.
+      try { await apiPost("/api/leave-room", { playerId: myIdR.current }); } catch {}
+
       const res = await apiPost("/api/lobby", { action:"create", playerId: myIdR.current, playerName });
       setLobbyCode(res.lobbyCode);
       setLobbyCopied(false);
@@ -398,6 +406,9 @@ export default function Home() {
     if (!joinCode.trim())   return setError("Enter a lobby code");
     setError("");
     try {
+      // Clear any previous room binding before joining a lobby.
+      try { await apiPost("/api/leave-room", { playerId: myIdR.current }); } catch {}
+
       const res = await apiPost("/api/lobby", {
         action: "join", lobbyCode: joinCode.trim().toUpperCase(),
         playerId: myIdR.current, playerName
@@ -448,6 +459,17 @@ export default function Home() {
     clearInterval(timerRef.current);
     clearInterval(pollRef.current);
     clearInterval(pollAnsRef.current);
+
+    // Clear server-side bindings so switching to random/private later won't stick to old rooms.
+    if (myIdR.current) {
+      // fire-and-forget
+      fetch("/api/leave-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: myIdR.current })
+      }).catch(() => {});
+    }
+
     roomR.current = "";
     setLobbyCode("");
     setJoinCode("");
@@ -505,6 +527,8 @@ export default function Home() {
 async function cancelMatchmaking() {
     clearInterval(pollRef.current);
     try { await apiPost("/api/leave-queue", { playerId: myIdR.current }); } catch {}
+    // Also clear any stale room binding just in case.
+    try { await apiPost("/api/leave-room", { playerId: myIdR.current }); } catch {}
     setScreen("online-name");
   }
 

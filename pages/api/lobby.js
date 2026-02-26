@@ -72,10 +72,6 @@ export default async function handler(req, res) {
         };
 
         await sb.from("rooms").upsert(room);
-        await sb.from("player_rooms").upsert([
-          { player_id: lobby.host_id, room_id: code },
-          ...(lobby.guest_id ? [{ player_id: lobby.guest_id, room_id: code }] : [])
-        ]);
 
         const opponentName = isHost ? (lobby.guest_name || "") : lobby.host_name;
         return res.status(200).json({ joined: true, room, opponentName });
@@ -106,11 +102,7 @@ export default async function handler(req, res) {
       // Upsert into rooms table so polling works
       await sb.from("rooms").upsert(room);
 
-      // Lookup entries for both
-      await sb.from("player_rooms").upsert([
-        { player_id: lobby.host_id, room_id: code },
-        { player_id: playerId,      room_id: code }
-      ]);
+      // No extra lookup table needed; clients find rooms via rooms.player_ids.
 
       return res.status(200).json({ joined: true, room, opponentName: lobby.host_name });
     }
@@ -133,12 +125,8 @@ export default async function handler(req, res) {
           answers: {},
           validation: {}
         };
-        // Ensure room + lookup exist for host too
+        // Ensure room exists for both players; clients find rooms via rooms.player_ids.
         await sb.from("rooms").upsert(room);
-        await sb.from("player_rooms").upsert([
-          { player_id: lobby.host_id,  room_id: lobbyCode },
-          { player_id: lobby.guest_id, room_id: lobbyCode }
-        ]);
         return res.status(200).json({ ready: true, room, opponentName: lobby.guest_name });
       }
 
