@@ -50,7 +50,37 @@ export default async function handler(req, res) {
 
       if (fetchErr) return res.status(500).json({ error: fetchErr.message });
       if (!lobby)   return res.status(404).json({ error: "Lobby not found. Check the code." });
-      if (lobby.status !== "waiting") return res.status(400).json({ error: "This lobby already started." });
+
+      // If lobby already started, allow REJOIN for the same host/guest.
+      // This prevents users getting stuck after the first game when they refresh or re-open the invite link.
+      if (lobby.status !== "waiting") {
+        const isHost = lobby.host_id === playerId;
+        const isGuest = lobby.guest_id === playerId;
+        if (!isHost && !isGuest) return res.status(400).json({ error: "This lobby already started." });
+
+        // Return existing room (or recreate it if missing)
+        const { data: existingRoom } = await sb.from("rooms").select("*").eq("id", code).maybeSingle();
+
+        const room = existingRoom || {
+          id: code,
+          letter: lobby.letter,
+          status: "playing",
+          players: [lobby.host_name, lobby.guest_name].filter(Boolean),
+          player_ids: [lobby.host_id, lobby.guest_id].filter(Boolean),
+          answers: {},
+          validation: {}
+        };
+
+        await sb.from("rooms").upsert(room);
+        await sb.from("player_rooms").upsert([
+          { player_id: lobby.host_id, room_id: code },
+          ...(lobby.guest_id ? [{ player_id: lobby.guest_id, room_id: code }] : [])
+        ]);
+
+        const opponentName = isHost ? (lobby.guest_name || "") : lobby.host_name;
+        return res.status(200).json({ joined: true, room, opponentName });
+      }
+
       if (lobby.host_id === playerId)  return res.status(400).json({ error: "You created this lobby — share it with a friend!" });
 
       // Join the lobby
@@ -93,7 +123,7 @@ export default async function handler(req, res) {
 
       if (!lobby) return res.status(404).json({ error: "Lobby not found" });
 
-      if (lobby.status === "playing" && lobby.guest_id) {
+      if (lobby.guest_id && lobby.status !== "waiting") {
         const room = {
           id: lobbyCode,
           letter: lobby.letter,

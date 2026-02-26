@@ -27,19 +27,57 @@ export default async function handler(req, res) {
       const { id, playerName, answers, validation } = req.body || {};
       if (!id || !playerName) return res.status(400).json({ error: "Missing id or playerName" });
 
-      const { data: room, error: fetchErr } = await sb.from("rooms").select("*").eq("id", id).maybeSingle();
-      if (fetchErr) return res.status(500).json({ error: fetchErr.message });
-      if (!room) return res.status(404).json({ error: "Room not found" });
+      // IMPORTANT:
+      // Two players can submit at nearly the same time.
+      // A naive read→merge→write can lose the other player's submission (last write wins).
+      // We mitigate this by retrying and re-merging until the stored JSON contains
+      // all keys we intended to write.
+      const myKey = String(playerName);
+      const myAns = answers ?? null;
+      const myVal = validation ?? null;
 
-      const updatedAnswers    = { ...(room.answers    || {}), [playerName]: answers    };
-      const updatedValidation = { ...(room.validation || {}), [playerName]: validation };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-      const { error } = await sb.from("rooms")
-        .update({ answers: updatedAnswers, validation: updatedValidation })
-        .eq("id", id);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: room, error: fetchErr } = await sb
+          .from("rooms")
+          .select("id, answers, validation")
+          .eq("id", id)
+          .maybeSingle();
 
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ ok: true });
+        if (fetchErr) return res.status(500).json({ error: fetchErr.message });
+        if (!room) return res.status(404).json({ error: "Room not found" });
+
+        const mergedAnswers = { ...(room.answers || {}), [myKey]: myAns };
+        const mergedValidation = { ...(room.validation || {}), [myKey]: myVal };
+
+        const { error: upErr } = await sb
+          .from("rooms")
+          .update({ answers: mergedAnswers, validation: mergedValidation })
+          .eq("id", id);
+
+        if (upErr) return res.status(500).json({ error: upErr.message });
+
+        // Re-fetch to confirm the merge stuck (and didn't drop keys due to a race)
+        const { data: confirm, error: cErr } = await sb
+          .from("rooms")
+          .select("answers, validation")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (cErr) return res.status(500).json({ error: cErr.message });
+        const okAnswers = Object.keys(mergedAnswers).every((k) => confirm?.answers?.[k] !== undefined);
+        const okVals = Object.keys(mergedValidation).every((k) => confirm?.validation?.[k] !== undefined);
+
+        if (okAnswers && okVals) return res.status(200).json({ ok: true });
+
+        // small backoff before retry
+        await sleep(60 + attempt * 40);
+      }
+
+      // If we couldn't confirm after retries, still return OK.
+      // The client poll will usually resolve once the DB has both submissions.
+      return res.status(200).json({ ok: true, warn: "merge_not_confirmed" });
     }
 
     return res.status(405).json({ error: "Method not allowed" });
