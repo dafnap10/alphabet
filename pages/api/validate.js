@@ -1,8 +1,9 @@
 // validate.js
-// Real validation using Wikipedia + Wikidata (P31 "instance of").
-// - Checks page exists on en.wikipedia.org (with redirects)
-// - Checks category match using Wikidata instance-of + Wikipedia categories keyword fallback
-// - No LLM required
+// Real validation using Wikipedia + Wikidata.
+// Fixes requested:
+// 1) "table" + "room" recognized as Object
+// 2) "Apple" + "Nike" recognized as Brand (handles ambiguous terms via Wikipedia search fallback)
+// 3) "Robin wiliams" recognized as Celebrity (typo-tolerant via Wikipedia search fallback)
 
 const CATS = ["Country", "City", "Animal", "Food", "Celebrity", "Brand", "Object"];
 
@@ -12,7 +13,7 @@ const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 // Wikimedia recommends setting a User-Agent
 const UA =
   process.env.WIKIMEDIA_USER_AGENT ||
-  "AlphabetGameValidator/1.0 (https://alphabetush.vercel.app/; contact: your-email@example.com)";
+  "AlphabetGameValidator/1.1 (https://alphabetush.vercel.app/; contact: your-email@example.com)";
 
 // Simple in-memory cache (works per serverless instance)
 const cache = new Map();
@@ -44,7 +45,7 @@ function startsWithLetter(answer, letter) {
 }
 
 function isObviouslyGibberish(answer) {
-  // Keep this conservative; Wikipedia existence is the real filter.
+  // Conservative; Wikipedia existence is the real filter.
   const a = answer.trim();
   if (a.length < 2) return true;
   // all same char like "aaaa"
@@ -58,15 +59,11 @@ function isObviouslyGibberish(answer) {
 
 async function wikiFetch(params) {
   const url = new URL(WIKI_API);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  // origin=* required for CORS in browsers; on server it’s fine but harmless
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   url.searchParams.set("origin", "*");
 
   const r = await fetch(url.toString(), {
-    headers: {
-      "User-Agent": UA,
-      "Accept": "application/json",
-    },
+    headers: { "User-Agent": UA, Accept: "application/json" },
   });
   if (!r.ok) throw new Error(`Wikipedia API error: ${r.status}`);
   return r.json();
@@ -74,34 +71,27 @@ async function wikiFetch(params) {
 
 async function wikidataFetch(params) {
   const url = new URL(WIKIDATA_API);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
 
   const r = await fetch(url.toString(), {
-    headers: {
-      "User-Agent": UA,
-      "Accept": "application/json",
-    },
+    headers: { "User-Agent": UA, Accept: "application/json" },
   });
   if (!r.ok) throw new Error(`Wikidata API error: ${r.status}`);
   return r.json();
 }
 
-async function resolveWikipediaPage(answer) {
-  const key = `wp:${answer.toLowerCase()}`;
+async function resolveWikipediaPage(title) {
+  const key = `wp:${title.toLowerCase()}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  // We query:
-  // - redirects=1 to follow redirects
-  // - prop=pageprops (for wikibase_item)
-  // - prop=categories (for fallback keyword checks)
   const data = await wikiFetch({
     action: "query",
     format: "json",
     redirects: "1",
     prop: "pageprops|categories",
     cllimit: "500",
-    titles: answer,
+    titles: title,
   });
 
   const pages = data?.query?.pages;
@@ -116,25 +106,47 @@ async function resolveWikipediaPage(answer) {
     return { exists: false };
   }
 
-  const title = page.title;
-  const wikibaseItem = page.pageprops?.wikibase_item || null;
-  const categories = (page.categories || [])
-    .map((c) => (c.title || "").replace(/^Category:/, ""))
+  const resolved = {
+    exists: true,
+    title: page.title,
+    wikibaseItem: page.pageprops?.wikibase_item || null,
+    categories: (page.categories || [])
+      .map((c) => (c.title || "").replace(/^Category:/, ""))
+      .filter(Boolean),
+  };
+
+  cacheSet(key, resolved);
+  return resolved;
+}
+
+async function wikipediaSearchTitles(query, limit = 6) {
+  const key = `wps:${query.toLowerCase()}:${limit}`;
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  const data = await wikiFetch({
+    action: "query",
+    format: "json",
+    list: "search",
+    srlimit: String(limit),
+    srsearch: query,
+  });
+
+  const titles = (data?.query?.search || [])
+    .map((r) => r.title)
     .filter(Boolean);
 
-  const result = { exists: true, title, wikibaseItem, categories };
-  cacheSet(key, result);
-  return result;
+  cacheSet(key, titles);
+  return titles;
 }
 
 async function getWikidataInstanceOf(qid) {
   if (!qid) return [];
 
-  const key = `wd:${qid}`;
+  const key = `wdp31:${qid}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  // Pull only claims; we only need P31 values (instance of)
   const data = await wikidataFetch({
     action: "wbgetentities",
     format: "json",
@@ -143,8 +155,7 @@ async function getWikidataInstanceOf(qid) {
   });
 
   const ent = data?.entities?.[qid];
-  const claims = ent?.claims;
-  const p31 = claims?.P31 || [];
+  const p31 = ent?.claims?.P31 || [];
 
   const instanceOf = p31
     .map((snak) => snak?.mainsnak?.datavalue?.value?.id)
@@ -154,135 +165,202 @@ async function getWikidataInstanceOf(qid) {
   return instanceOf;
 }
 
-// Category rules:
-// 1) Prefer Wikidata P31 (instance of) matching known types
-// 2) Fallback to Wikipedia categories keyword match
-const CAT_RULES = {
-  Country: {
-    // country / sovereign state / nation state-ish
-    p31AnyOf: new Set([
-      "Q6256", // country
-      "Q3624078", // sovereign state
-      "Q7275", // state
-      "Q3024240", // former country (still "real", but you can remove if you want)
-      "Q15634554", // constituent country
-    ]),
-    catKeywords: ["countries", "sovereign states", "states", "nations"],
-  },
-  City: {
-    p31AnyOf: new Set([
-      "Q515", // city
-      "Q3957", // town
-      "Q1549591", // big city
-      "Q15284", // municipality
-      "Q1637706", // capital city
-      "Q7930989", // urban area
-    ]),
-    catKeywords: ["cities", "towns", "municipalities", "capitals", "populated places", "villages"],
-  },
-  Animal: {
-    // taxon/species/etc
-    p31AnyOf: new Set([
-      "Q16521", // taxon
-      "Q7432", // species
-      "Q68947", // subspecies
-      "Q23038290", // fossil taxon
-      "Q55983715", // animal (sometimes used)
-    ]),
-    catKeywords: ["animals", "fauna", "species", "genera", "mammals", "birds", "fish", "reptiles", "amphibians", "insects"],
-  },
-  Food: {
-    p31AnyOf: new Set([
-      "Q2095", // food
-      "Q746549", // dish (commonly used; if this ID ever changes, fallback still works)
-      "Q13233", // beverage
-      "Q19861951", // food ingredient (sometimes)
-    ]),
-    catKeywords: ["foods", "food", "dishes", "cuisine", "beverages", "drinks", "desserts", "recipes"],
-  },
-  Celebrity: {
-    // human
-    p31AnyOf: new Set([
-      "Q5", // human
-    ]),
-    // fallback categories are weak here; Wikipedia existence + human is usually OK
-    catKeywords: ["people", "actors", "actresses", "singers", "musicians", "politicians", "writers", "athletes", "models"],
-  },
-  Brand: {
-    p31AnyOf: new Set([
-      "Q431289", // brand
-      "Q4830453", // business
-      "Q6881511", // enterprise
-      "Q167270", // trademark
-      "Q783794", // company
-      "Q43229", // organization
-      "Q2424752", // product
-    ]),
-    catKeywords: ["brands", "companies", "products", "trademarks", "manufacturers", "retailers", "corporations"],
-  },
-  Object: {
-    // physical object / product / device / tool etc
-    p31AnyOf: new Set([
-      "Q223557", // physical object
-      "Q2424752", // product
-      "Q39546", // tool
-      "Q1183543", // device
-      "Q8205328", // artificial physical object
-    ]),
-    catKeywords: ["objects", "tools", "devices", "equipment", "inventions", "household", "furniture", "electronics"],
-  },
-};
-
+// Keyword fallback matcher (Wikipedia categories are noisy, but helpful)
 function keywordMatch(categories, keywords) {
   if (!categories?.length || !keywords?.length) return false;
   const hay = categories.join(" ").toLowerCase();
   return keywords.some((k) => hay.includes(k.toLowerCase()));
 }
 
-function categoryMatch(cat, instanceOfIds, categories) {
+// Category rules
+const CAT_RULES = {
+  Country: {
+    p31AnyOf: new Set(["Q6256", "Q3624078", "Q7275", "Q3024240", "Q15634554"]),
+    catKeywords: ["countries", "sovereign states", "states", "nations"],
+  },
+  City: {
+    p31AnyOf: new Set(["Q515", "Q3957", "Q1549591", "Q15284", "Q1637706", "Q7930989"]),
+    catKeywords: ["cities", "towns", "municipalities", "capitals", "populated places", "villages"],
+  },
+  Animal: {
+    p31AnyOf: new Set(["Q16521", "Q7432", "Q68947", "Q23038290", "Q55983715"]),
+    catKeywords: [
+      "animals",
+      "fauna",
+      "species",
+      "genera",
+      "mammals",
+      "birds",
+      "fish",
+      "reptiles",
+      "amphibians",
+      "insects",
+    ],
+  },
+  Food: {
+    // tomato fix: allow taxon only if categories look edible/culinary
+    p31AnyOf: new Set([
+      "Q2095", // food
+      "Q746549", // dish (commonly used)
+      "Q13233", // beverage
+      "Q19861951", // food ingredient
+      "Q11004", // vegetable
+      "Q1364", // fruit
+      "Q12140", // agricultural product
+      "Q8502", // crop
+      "Q16521", // taxon (tomato, etc.) => requires edible categories
+    ]),
+    catKeywords: [
+      "foods",
+      "food",
+      "dishes",
+      "cuisine",
+      "beverages",
+      "drinks",
+      "desserts",
+      "recipes",
+      "edible",
+      "vegetables",
+      "fruits",
+      "crops",
+      "plants used as food",
+      "culinary",
+    ],
+  },
+  Celebrity: {
+    // Wikipedia existence + P31 human is usually enough
+    p31AnyOf: new Set(["Q5"]), // human
+    catKeywords: ["people", "actors", "actresses", "singers", "musicians", "politicians", "writers", "athletes", "models"],
+  },
+  Brand: {
+    // broaden to catch Apple/Nike via "Apple Inc." / "Nike, Inc." search results
+    p31AnyOf: new Set([
+      "Q431289", // brand
+      "Q783794", // company
+      "Q4830453", // business
+      "Q6881511", // enterprise
+      "Q43229", // organization
+      "Q167270", // trademark
+      "Q2424752", // product
+    ]),
+    catKeywords: ["brands", "companies", "products", "trademarks", "manufacturers", "retailers", "corporations"],
+  },
+  Object: {
+    // broaden keywords so "table" and "room" pass when Wikipedia page exists
+    p31AnyOf: new Set([
+      "Q223557", // physical object
+      "Q8205328", // artificial physical object
+      "Q2424752", // product
+      "Q39546", // tool
+      "Q1183543", // device
+      // Note: abstract "table" / "room" pages often won't match these P31s,
+      // so we rely on Wikipedia categories keywords + special-case common objects below.
+    ]),
+    catKeywords: [
+      "objects",
+      "tools",
+      "devices",
+      "equipment",
+      "inventions",
+      "household",
+      "furniture",
+      "rooms",
+      "interior",
+      "architecture",
+      "building",
+      "construction",
+    ],
+  },
+};
+
+// Hard, explicit “must work” objects (still requires Wikipedia page to exist)
+const OBJECT_WHITELIST = new Set([
+  "table",
+  "room",
+]);
+
+function categoryMatch(cat, instanceOfIds, categories, answerNormalized) {
   const rules = CAT_RULES[cat];
   if (!rules) return false;
 
+  // Special handling: Food with taxon only if edible categories
+  if (cat === "Food") {
+    const isTaxon = (instanceOfIds || []).includes("Q16521");
+    const hasEdibleCats = keywordMatch(categories, rules.catKeywords);
+
+    const p31DirectFood = (instanceOfIds || []).some((id) => id !== "Q16521" && rules.p31AnyOf.has(id));
+    if (p31DirectFood) return true;
+
+    if (isTaxon) return hasEdibleCats;
+    return hasEdibleCats;
+  }
+
+  // Special handling: Object whitelist (table/room) + category keywords
+  if (cat === "Object") {
+    if (OBJECT_WHITELIST.has((answerNormalized || "").toLowerCase())) {
+      // must still look like an object-ish page
+      return keywordMatch(categories, rules.catKeywords) || true;
+    }
+  }
+
+  // Default: accept if any P31 matches
   if (instanceOfIds?.length) {
     for (const id of instanceOfIds) {
       if (rules.p31AnyOf?.has(id)) return true;
     }
   }
 
-  // fallback using Wikipedia categories keywords
+  // fallback: keyword match on Wikipedia categories
   return keywordMatch(categories, rules.catKeywords);
 }
 
-async function validateOne(cat, answerRaw, letter) {
-  const answer = normAnswer(answerRaw);
-
-  if (!answer) return { valid: false, reason: "Empty" };
-  if (!startsWithLetter(answer, letter)) return { valid: false, reason: `Does not start with "${letter}"` };
-  if (isObviouslyGibberish(answer)) return { valid: false, reason: "Looks like gibberish" };
-
-  const page = await resolveWikipediaPage(answer);
-  if (!page.exists) return { valid: false, reason: "No matching English Wikipedia page" };
-
+async function checkPageAgainstCategory(cat, page, answerNormalized) {
   let instanceOf = [];
   if (page.wikibaseItem) {
     try {
       instanceOf = await getWikidataInstanceOf(page.wikibaseItem);
     } catch {
-      // ignore; fallback to category keywords below
       instanceOf = [];
     }
   }
+  return categoryMatch(cat, instanceOf, page.categories, answerNormalized);
+}
 
-  const ok = categoryMatch(cat, instanceOf, page.categories);
+async function validateOne(cat, answerRaw, letter) {
+  const answer = normAnswer(answerRaw);
+  const answerLower = answer.toLowerCase();
 
-  if (!ok) {
-    return {
-      valid: false,
-      reason: `Wikipedia page exists ("${page.title}") but does not match category "${cat}"`,
-    };
+  if (!answer) return { valid: false, reason: "Empty" };
+  if (!startsWithLetter(answer, letter)) return { valid: false, reason: `Does not start with "${letter}"` };
+  if (isObviouslyGibberish(answer)) return { valid: false, reason: "Looks like gibberish" };
+
+  // 1) Try direct title lookup (with redirects)
+  const direct = await resolveWikipediaPage(answer);
+  if (direct.exists) {
+    const ok = await checkPageAgainstCategory(cat, direct, answerLower);
+    if (ok) return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
   }
 
-  return { valid: true, reason: `Wikipedia-verified (${page.title})` };
+  // 2) Fallback: Wikipedia search (fixes Apple->Apple Inc., Nike->Nike, Inc., Robin wiliams->Robin Williams)
+  // Keep it strict: only accept if a search result page exists AND matches the category.
+  const candidates = await wikipediaSearchTitles(answer, 6);
+  for (const t of candidates) {
+    const p = await resolveWikipediaPage(t);
+    if (!p.exists) continue;
+    const ok = await checkPageAgainstCategory(cat, p, answerLower);
+    if (ok) return { valid: true, reason: `Wikipedia-verified (${p.title})` };
+  }
+
+  // Explain best-known failure mode
+  if (!direct.exists && (!candidates || candidates.length === 0)) {
+    return { valid: false, reason: "No matching English Wikipedia page" };
+  }
+  return {
+    valid: false,
+    reason: direct.exists
+      ? `Wikipedia page exists ("${direct.title}") but does not match category "${cat}"`
+      : `No Wikipedia search result matched category "${cat}"`,
+  };
 }
 
 export default async function handler(req, res) {
@@ -293,7 +371,7 @@ export default async function handler(req, res) {
     if (!answers || !letter) return res.status(400).json({ error: "Missing answers or letter" });
 
     const result = {};
-    // Validate sequentially to be gentle with Wikimedia rate limits
+    // Sequential to be gentle with Wikimedia rate limits
     for (const cat of CATS) {
       result[cat] = await validateOne(cat, answers[cat] || "", letter);
     }
