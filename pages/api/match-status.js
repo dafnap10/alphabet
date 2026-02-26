@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { playerId } = req.query;
+    const { playerId, playerName } = req.query;
     if (!playerId) return res.status(400).json({ error: "Missing playerId" });
 
     const sb = getSupabaseAdmin();
@@ -69,12 +69,23 @@ export default async function handler(req, res) {
       .eq("player_id", playerId)
       .maybeSingle();
 
+    // IMPORTANT RACE FIX:
+    // Another poller may have deleted my queue row in order to form a match,
+    // but the room insert may not be visible yet. If we return queued:false,
+    // the client can get stuck forever. Instead, re-enqueue best-effort.
     if (!meQ) {
-      // Not queued, not in a room.
-      return res.status(200).json({ matched: false, queued: false });
+      const myName = (playerName && String(playerName).trim()) || "Player";
+      try {
+        await sb.from("queue").upsert({
+          player_id: playerId,
+          player_name: myName,
+          joined_at: new Date().toISOString(),
+        });
+      } catch {}
+      return res.status(200).json({ matched: false, queued: true });
     }
 
-    const myName = meQ.player_name || "Player";
+    const myName = meQ.player_name || (playerName && String(playerName).trim()) || "Player";
 
     // 3) Find the oldest other queued player.
     const { data: oppList } = await sb
