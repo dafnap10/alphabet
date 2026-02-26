@@ -16,6 +16,21 @@ function getDB() {
 }
 
 export default async function handler(req, res) {
+  // GET — lightweight fetch of lobby info (used by invite link to show host name)
+  if (req.method === "GET") {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: "Missing id" });
+    try {
+      const sb = getDB();
+      const { data, error } = await sb.from("lobbies").select("id,host_name,status").eq("id", id.toUpperCase()).maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: "Lobby not found" });
+      return res.status(200).json({ host_name: data.host_name, status: data.status });
+    } catch (err) {
+      return res.status(500).json({ error: String(err.message || err) });
+    }
+  }
+
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
     const { action, lobbyCode, playerId, playerName } = req.body || {};
