@@ -256,10 +256,21 @@ export default function Home() {
     }, 1000);
   }
 
-  // ── Submit + validate (API key stays server-side) ─────────────────────────
-  async function doSubmit(l, roomId) {
-    if (submittedR.current) return;
+  // ── Force-finish an online round when time runs out (even if opponent didn't submit)
+  function forceFinishOnline(reason = "Time is up") {
     clearInterval(timerRef.current);
+    clearInterval(pollAnsRef.current);
+    // If opponent never submitted (or left), show score with opponent = 0
+    setOppAnswers({});
+    setOppVal(null);
+    setToast(reason);
+    setTimeout(() => setToast(""), 2200);
+    setScreen("online-score");
+  }
+
+  // ── Submit + validate (API key stays server-side) ─────────────────────────
+  async function doSubmit(l, roomId, forceFinishAfter = false) {
+    if (submittedR.current) return;
     submittedR.current = true;
     setSubmitted(true);
     setValidating(true);
@@ -289,6 +300,11 @@ export default function Home() {
           validation: result
         });
       } catch(e) { console.error("save answers:", e); }
+
+      // If time is already over, don't wait forever for the opponent.
+      if (forceFinishAfter) {
+        forceFinishOnline("Time is up");
+      }
     } else {
       setScreen("solo-score");
     }
@@ -398,31 +414,76 @@ export default function Home() {
     setLetter(l); letterR.current = l;
     setAnswers({}); answersR.current = {};
     setScreen("online-game");
-    startTimer(() => doSubmit(l, room.id));
+    // When the timer ends:
+    // - if we already submitted, force-finish so we don't wait forever
+    // - if we didn't submit, submit whatever we have and then force-finish
+    startTimer(() => {
+      if (submittedR.current) {
+        forceFinishOnline("Time is up");
+      } else {
+        void doSubmit(l, room.id, true);
+      }
+    });
   }
 
-  
-async function rematchSameRoom() {
-  const roomId = roomR.current;
-  if (!roomId) return;
-  setError("");
-  try {
-    const r = await apiPost("/api/rematch", { roomId });
-    const newRoom = r.room;
-    const newLetter = newRoom.letter;
-    setLetter(newLetter); letterR.current = newLetter;
-    setAnswers({}); answersR.current = {};
+  // ── Navigation helpers ────────────────────────────────────────────────────
+  function goHome() {
+    clearInterval(timerRef.current);
+    clearInterval(pollRef.current);
+    clearInterval(pollAnsRef.current);
+    roomR.current = "";
+    setLobbyCode("");
+    setJoinCode("");
+    setOppName("");
     setOppAnswers({});
     setOppVal(null);
     setValidation(null);
     setSubmitted(false);
     setValidating(false);
-    setScreen("online-game");
-    startTimer(() => doSubmit(newLetter, roomId));
-  } catch (e) {
-    setError("Rematch failed: " + e.message);
+    // Remove any ?lobby=... from the URL
+    if (typeof window !== "undefined") {
+      const clean = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+    setScreen("home");
   }
-}
+
+  // ── Private rematch: both players must click “Play Again” ──────────────────
+  async function rematchSameRoom() {
+    const roomId = roomR.current;
+    if (!roomId) return;
+    setError("");
+    try {
+      // Register my vote for a rematch. Server will start the rematch only
+      // when BOTH players have voted.
+      const r = await apiPost("/api/rematch", { roomId, playerId: myIdR.current });
+
+      if (r?.started && r?.room?.letter) {
+        const newLetter = r.room.letter;
+        setLetter(newLetter); letterR.current = newLetter;
+        setAnswers({}); answersR.current = {};
+        setOppAnswers({});
+        setOppVal(null);
+        setValidation(null);
+        setSubmitted(false);
+        setValidating(false);
+        setScreen("online-game");
+        startTimer(() => {
+          if (submittedR.current) {
+            forceFinishOnline("Time is up");
+          } else {
+            void doSubmit(newLetter, roomId, true);
+          }
+        });
+        return;
+      }
+
+      // Not started yet → wait for the other player to click Play Again.
+      setScreen("rematch-wait");
+    } catch (e) {
+      setError("Rematch failed: " + e.message);
+    }
+  }
 
 async function cancelMatchmaking() {
     clearInterval(pollRef.current);
@@ -444,6 +505,7 @@ async function cancelMatchmaking() {
         const oppPid = (room.player_ids || []).find(pid => pid && pid !== myPid);
         if (oppPid && room.answers?.[oppPid] && room.validation?.[oppPid]) {
           clearInterval(pollAnsRef.current);
+          clearInterval(timerRef.current);
           setOppAnswers(room.answers[oppPid]);
           setOppVal(room.validation[oppPid]);
           setScreen("online-score");
@@ -454,6 +516,7 @@ async function cancelMatchmaking() {
         const oppNameKey = (room.players||[]).find(p => p !== nameR.current);
         if (oppNameKey && room.answers?.[oppNameKey] && room.validation?.[oppNameKey]) {
           clearInterval(pollAnsRef.current);
+          clearInterval(timerRef.current);
           setOppAnswers(room.answers[oppNameKey]);
           setOppVal(room.validation[oppNameKey]);
           setScreen("online-score");
@@ -462,6 +525,29 @@ async function cancelMatchmaking() {
     }, 2000);
     return () => clearInterval(pollAnsRef.current);
   }, [screen, submitted, validating]);
+
+  // ── Poll for private rematch start (both players clicked Play Again) ───────
+  useEffect(() => {
+    if (screen !== "rematch-wait") return;
+    const roomId = roomR.current;
+    if (!roomId) return;
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const room = await apiGet(`/api/room?id=${roomId}`);
+        if (!room) return;
+        // Rematch is considered started when the letter changes and answers are reset.
+        const letterNow = room.letter;
+        const answersEmpty = !room.answers || Object.keys(room.answers).length === 0;
+        const validationEmpty = !room.validation || Object.keys(room.validation).length === 0;
+        if (letterNow && letterNow !== letterR.current && answersEmpty && validationEmpty) {
+          clearInterval(pollRef.current);
+          launchGame(room, oppName || "Opponent");
+        }
+      } catch {}
+    }, 1500);
+    return () => clearInterval(pollRef.current);
+  }, [screen, oppName]);
 
   // ── Share score ───────────────────────────────────────────────────────────
   // Desired behavior:
@@ -478,8 +564,10 @@ async function cancelMatchmaking() {
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
     const url = typeof window !== "undefined" ? window.location.origin : "";
     const text = isOnline
-      ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}\nCan you beat me? ${url}`
-      : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}\nTry to beat it! ${url}`;
+      ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}
+Can you beat me?`
+      : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}
+Try to beat it!`;
 
     setShareText(text);
     setShareUrl(url);
@@ -499,6 +587,16 @@ async function cancelMatchmaking() {
 
     setShareOpen(true);
   }
+
+  // Build share payload text that includes the URL exactly once.
+  const shareCombinedText = (txt = shareText, url = shareUrl) => {
+    const t = (txt || '').trim();
+    const u = (url || '').trim();
+    if (!u) return t;
+    // If text already contains the url, don't append again
+    if (t.includes(u)) return t;
+    return `${t} ${u}`.trim();
+  };
 
   function openShareLink(href) {
     try {
@@ -521,13 +619,13 @@ async function cancelMatchmaking() {
 
   async function doCopyShare() {
     try {
-      await navigator.clipboard.writeText(shareText);
+      await navigator.clipboard.writeText(shareCombinedText());
       setToast("Copied!");
       setTimeout(() => setToast(""), 1800);
     } catch {
       try {
         const ta = document.createElement("textarea");
-        ta.value = shareText;
+        ta.value = shareCombinedText();
         document.body.appendChild(ta);
         ta.select();
         document.execCommand("copy");
@@ -604,14 +702,14 @@ async function cancelMatchmaking() {
                 {typeof navigator !== "undefined" && navigator.share && (
                   <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
                 )}
-                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareCombinedText())}`)}><span>🟢</span> WhatsApp</button>
                 <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
-                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
-                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareCombinedText())}`)}><span>𝕏</span> X</button>
+                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareCombinedText())}`)}><span>✉️</span> Email</button>
                 <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
               </div>
               <div className="smini">Preview</div>
-              <div className="sbox">{shareText}</div>
+              <div className="sbox">{shareCombinedText()}</div>
             </div>
           </div>
         </div>
@@ -636,7 +734,7 @@ async function cancelMatchmaking() {
     <div className="G"><div className="noise"/>
       <div className="S">
         <div className="oscr">
-          <button className="back" onClick={() => setScreen("home")}>← Back</button>
+          <button className="back" onClick={goHome}>← Back</button>
           <div className="stitle">Solo Play</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <div className="flbl">YOUR NAME</div>
@@ -655,7 +753,7 @@ async function cancelMatchmaking() {
     <div className="G"><div className="noise"/>
       <div className="S">
         <div className="oscr">
-          <button className="back" onClick={() => setScreen("home")}>← Back</button>
+          <button className="back" onClick={goHome}>← Back</button>
           <div className="stitle">Play Online</div>
 
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -772,12 +870,32 @@ async function cancelMatchmaking() {
     );
   }
 
+  // ── Waiting for private rematch (both players must accept) ───────────────
+  if (screen === "rematch-wait") {
+    return (
+      <div className="G"><div className="noise"/>
+        <div className="S">
+          <div className="oscr">
+            <div className="stitle">Play Again</div>
+            <div className="mcard">
+              <div className="pulse-ring"><span className="pulse-ico">🔁</span></div>
+              <div className="mcard-title">Waiting for your friend</div>
+              <div className="mstatus">They need to press <strong style={{color:"var(--txt)"}}>Play Again</strong> too…</div>
+              <div className="spin" style={{width:24,height:24,borderWidth:2}}/>
+            </div>
+            <button className="btn btn-g" onClick={goHome}>Home</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Solo game ─────────────────────────────────────────────────────────────
   if (screen === "solo-game") return (
     <div className="G"><div className="noise"/>
       <div className="S">
         <div className="ghdr">
-          <button className="back" onClick={() => { clearInterval(timerRef.current); setScreen("home"); }}>← Quit</button>
+          <button className="back" onClick={goHome}>← Quit</button>
           <span style={{fontSize:13,color:"var(--mute)"}}>{playerName}</span>
         </div>
         <div className="ldisplay">
@@ -822,14 +940,14 @@ async function cancelMatchmaking() {
                 {typeof navigator !== "undefined" && navigator.share && (
                   <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
                 )}
-                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareCombinedText())}`)}><span>🟢</span> WhatsApp</button>
                 <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
-                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
-                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareCombinedText())}`)}><span>𝕏</span> X</button>
+                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareCombinedText())}`)}><span>✉️</span> Email</button>
                 <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
               </div>
               <div className="smini">Preview</div>
-              <div className="sbox">{shareText}</div>
+              <div className="sbox">{shareCombinedText()}</div>
             </div>
           </div>
         </div>
@@ -865,7 +983,7 @@ async function cancelMatchmaking() {
           </div>
           <div style={{display:"flex",gap:10,width:"100%"}}>
             <button className="btn btn-p" style={{flex:1}} onClick={startSolo}>Play Again</button>
-            <button className="btn btn-g" style={{flex:1}} onClick={() => setScreen("home")}>Home</button>
+            <button className="btn btn-g" style={{flex:1}} onClick={goHome}>Home</button>
           </div>
         </div>
       </div>
@@ -877,7 +995,7 @@ async function cancelMatchmaking() {
     <div className="G"><div className="noise"/>
       <div className="S">
         <div className="ghdr">
-          <button className="back" onClick={() => { clearInterval(timerRef.current); setScreen("home"); }}>← Quit</button>
+          <button className="back" onClick={goHome}>← Quit</button>
           <span style={{fontSize:13,color:"var(--mute)"}}>vs {oppName}</span>
         </div>
         <div className="ldisplay">
@@ -928,14 +1046,14 @@ async function cancelMatchmaking() {
                   {typeof navigator !== "undefined" && navigator.share && (
                     <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
                   )}
-                  <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                  <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareCombinedText())}`)}><span>🟢</span> WhatsApp</button>
                   <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
-                  <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
-                  <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                  <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareCombinedText())}`)}><span>𝕏</span> X</button>
+                  <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareCombinedText())}`)}><span>✉️</span> Email</button>
                   <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
                 </div>
                 <div className="smini">Preview</div>
-                <div className="sbox">{shareText}</div>
+                <div className="sbox">{shareCombinedText()}</div>
               </div>
             </div>
           </div>
@@ -981,7 +1099,7 @@ async function cancelMatchmaking() {
             </div>
             <div style={{display:"flex",gap:10,paddingBottom:24}}>
               <button className="btn btn-p" style={{flex:1}} onClick={() => (onlineMode === "private" ? rematchSameRoom() : setScreen("online-name"))}>Play Again</button>
-              <button className="btn btn-g" style={{flex:1}} onClick={() => setScreen("home")}>Home</button>
+              <button className="btn btn-g" style={{flex:1}} onClick={goHome}>Home</button>
             </div>
           </div>
         </div>
