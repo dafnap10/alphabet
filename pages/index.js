@@ -246,13 +246,14 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .tbar{height:100%;border-radius:2px;transition:width 1s linear,background 1s}
 .tnum{font-family:'Bebas Neue',sans-serif;font-size:48px;text-align:center;letter-spacing:2px;transition:color .5s}
 .cats{display:flex;flex-direction:column;gap:8px;margin:16px 0}
-.crow{display:flex;align-items:center;gap:12px;background:var(--surf);border:1px solid var(--brd);border-radius:8px;padding:10px 14px;transition:border-color .2s;direction:ltr}
+.crow{display:flex;align-items:center;gap:12px;background:var(--surf);border:1px solid var(--brd);border-radius:8px;padding:10px 14px;transition:border-color .2s}
 .crow:focus-within{border-color:var(--acc);box-shadow:0 0 0 2px rgba(232,255,71,.1)}
 .crow.bad{border-color:var(--red)}
 .cico{font-size:20px;width:28px;text-align:center;flex-shrink:0}
 .clbl{font-size:11px;color:var(--mute);width:70px;flex-shrink:0;letter-spacing:.5px;font-weight:500}
-.cinp{flex:1;background:transparent;border:none;outline:none;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:16px;font-weight:500;direction:ltr}
+.cinp{flex:1;background:transparent;border:none;outline:none;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:16px;font-weight:500}
 .cinp::placeholder{color:var(--mute);font-weight:300}
+[dir=rtl] .cinp{direction:rtl;text-align:right}
 .cinp:disabled{opacity:.5;cursor:not-allowed}
 .cx{font-size:13px;min-width:16px;text-align:center}
 .vwrap{display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 16px;text-align:center}
@@ -275,6 +276,10 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 .rbody{flex:1;min-width:0}
 .rans{font-weight:500;font-size:15px}
 .rwhy{font-size:11px;color:var(--mute);margin-top:2px;font-style:italic}
+[dir=rtl] .rans,[dir=rtl] .rwhy{text-align:right;direction:rtl}
+[dir=rtl] .rrow{border-left:none;border-right:3px solid transparent}
+[dir=rtl] .rrow.rv{border-right-color:var(--ok)}
+[dir=rtl] .rrow.ri{border-right-color:var(--red)}
 .rpts{font-family:'Bebas Neue',sans-serif;font-size:20px;flex-shrink:0}
 .pt-ok{color:var(--ok)}.pt-no{color:var(--red)}
 .oscr{display:flex;flex-direction:column;min-height:100vh;padding-top:24px;gap:20px}
@@ -351,7 +356,14 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Home() {
   const [screen,      setScreen]      = useState("home");
-  const [lang,        setLang]        = useState("en");
+  const [lang,        setLang]        = useState(() => {
+    // Initialize lang from URL on first render to avoid flicker
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("lang");
+      if (p === "he" || p === "en") return p;
+    }
+    return "en";
+  });
   const [letter,      setLetter]      = useState("B");
   const [answers,     setAnswers]     = useState({});
   const [timeLeft,    setTimeLeft]    = useState(60);
@@ -435,12 +447,12 @@ export default function Home() {
     const langP   = params.get("lang");
     const hostP   = params.get("host");
 
-    if (langP === "he" || langP === "en") setLang(langP);
+    if (langP === "he" || langP === "en") { setLang(langP); langR.current = langP; }
 
     if (invite) {
       setJoinCode(invite.toUpperCase());
       setOnlineMode("private");
-      if (hostP) setHostName(decodeURIComponent(hostP));
+      if (hostP) setHostName(hostP);
       setScreen("invite-landing");
     }
   }, []);
@@ -561,7 +573,7 @@ export default function Home() {
     setError("");
     try {
       try { await apiPost("/api/leave-room", { playerId: myIdR.current }); } catch {}
-      const res = await apiPost("/api/lobby", { action:"create", playerId: myIdR.current, playerName });
+      const res = await apiPost("/api/lobby", { action:"create", playerId: myIdR.current, playerName, lang: langR.current });
       setLobbyCode(res.lobbyCode);
       setLobbyCopied(false);
       setQueueStatus("searching"); // reset so "found" state is fresh
@@ -592,7 +604,14 @@ export default function Home() {
         action: "join", lobbyCode: joinCode.trim().toUpperCase(),
         playerId: myIdR.current, playerName
       });
-      if (res.joined) launchGame(res.room, res.opponentName);
+      if (res.joined) {
+        // Apply host's language so the friend plays in the same language
+        if (res.lang && res.lang !== langR.current) {
+          setLang(res.lang);
+          langR.current = res.lang;
+        }
+        launchGame(res.room, res.opponentName);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -601,11 +620,11 @@ export default function Home() {
   // Build lobby link WITH lang + host name for invite landing
   function getLobbyLink(code) {
     if (typeof window === "undefined") return "";
-    const params = new URLSearchParams();
-    params.set("lobby", code || lobbyCode);
-    params.set("lang", lang);
-    if (playerName.trim()) params.set("host", encodeURIComponent(playerName.trim()));
-    return `${window.location.origin}/?${params.toString()}`;
+    const base = window.location.origin + "/";
+    const lobbyVal = encodeURIComponent(code || lobbyCode);
+    const langVal  = encodeURIComponent(langR.current || lang);
+    const hostVal  = playerName.trim() ? "&host=" + encodeURIComponent(playerName.trim()) : "";
+    return `${base}?lobby=${lobbyVal}&lang=${langVal}${hostVal}`;
   }
 
   // Copy invite text WITH game description

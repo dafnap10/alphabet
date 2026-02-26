@@ -1,4 +1,3 @@
-// pages/api/match-status.js
 import { getSupabaseAdmin } from "../../lib/supabase";
 import crypto from "crypto";
 
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
     // Cleanup stale queue rows
     try { await sb.from("queue").delete().lt("joined_at", nowMinusMinutes(30)); } catch {}
 
-    // 1) Already matched into an active playing room?
+    // 1) Already in an active room with 2 players?
     const { data: mine } = await sb
       .from("rooms")
       .select("*")
@@ -38,36 +37,37 @@ export default async function handler(req, res) {
       .order("created_at", { ascending: false })
       .limit(1);
 
-    if (mine && mine[0]) {
+    if (mine?.[0]) {
       const room = mine[0];
-      const matched = Array.isArray(room.player_ids) && room.player_ids.length >= 2;
-      if (matched) {
-        // Clean up queue entries for both players
+      if (Array.isArray(room.player_ids) && room.player_ids.length >= 2) {
         try {
-          const ids = Array.isArray(room.player_ids) ? room.player_ids : [];
-          if (ids.length) await sb.from("queue").delete().in("player_id", ids);
+          await sb.from("queue").delete().in("player_id", room.player_ids);
         } catch {}
         return res.status(200).json({ matched: true, room });
       }
-      return res.status(200).json({ matched: false });
     }
 
-    // 2) Ensure I'm in queue
+    // 2) Ensure I'm in queue — read my row
     const { data: meQ } = await sb
       .from("queue")
-      .select("player_id,player_name,joined_at,lang")
+      .select("*")
       .eq("player_id", playerId)
       .maybeSingle();
 
     if (!meQ) {
-      // I was removed from queue (race) — re-add
+      // Was removed (race) — re-add with fallback for missing lang column
+      const myName = (playerName && String(playerName).trim()) || "Player";
       try {
-        await sb.from("queue").upsert({
-          player_id: playerId,
-          player_name: (playerName && String(playerName).trim()) || "Player",
-          lang: lang || "en",
-          joined_at: new Date().toISOString(),
+        const r1 = await sb.from("queue").upsert({
+          player_id: playerId, player_name: myName,
+          lang: lang || "en", joined_at: new Date().toISOString(),
         });
+        if (r1.error) {
+          await sb.from("queue").upsert({
+            player_id: playerId, player_name: myName,
+            joined_at: new Date().toISOString(),
+          });
+        }
       } catch {}
       return res.status(200).json({ matched: false, queued: true });
     }
@@ -75,10 +75,10 @@ export default async function handler(req, res) {
     const myName = meQ.player_name || (playerName && String(playerName).trim()) || "Player";
     const myLang = meQ.lang || lang || "en";
 
-    // 3) Leader-only pairing: oldest in queue creates the room
+    // 3) Fetch oldest 2 queue entries
     const { data: q2 } = await sb
       .from("queue")
-      .select("player_id,player_name,joined_at,lang")
+      .select("*")
       .order("joined_at", { ascending: true })
       .limit(2);
 
@@ -87,16 +87,15 @@ export default async function handler(req, res) {
     const leader = q2[0];
     const opp    = q2[1];
 
-    // Non-leader just waits for leader to create the room
+    // Only the leader (oldest) creates the room — second player just waits
     if (leader.player_id !== playerId) {
       return res.status(200).json({ matched: false, queued: true });
     }
 
     const oppId   = opp.player_id;
     const oppName = opp.player_name || "Opponent";
+    const roomId  = stableRoomId(playerId, oppId);
 
-    // Use the leader's language for the letter
-    const roomId = stableRoomId(playerId, oppId);
     const insert = {
       id: roomId,
       letter: randomLetter(myLang),
@@ -108,10 +107,10 @@ export default async function handler(req, res) {
       created_at: new Date().toISOString(),
     };
 
-    // Insert room (idempotent — if it exists, fetch it)
     let room = null;
     const { data: created, error: cErr } = await sb.from("rooms").insert(insert).select("*").maybeSingle();
     if (cErr) {
+      // Room likely already exists (retry) — just fetch it
       const { data: existing } = await sb.from("rooms").select("*").eq("id", roomId).maybeSingle();
       room = existing || null;
     } else {
@@ -120,7 +119,7 @@ export default async function handler(req, res) {
 
     if (!room) return res.status(200).json({ matched: false, queued: true });
 
-    // Clean up queue after room is confirmed
+    // Clean up both players from queue
     try { await sb.from("queue").delete().in("player_id", [playerId, oppId]); } catch {}
 
     return res.status(200).json({ matched: true, room });

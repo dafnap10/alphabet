@@ -1,4 +1,3 @@
-// pages/api/matchmake.js
 import { getSupabaseAdmin } from "../../lib/supabase";
 
 function nowMinusMinutes(min) {
@@ -14,8 +13,7 @@ export default async function handler(req, res) {
 
     const sb = getSupabaseAdmin();
 
-    // Only return a room that is actively "playing" with 2 players.
-    // Filtering by status=playing means finished/old rooms never trap a returning player.
+    // Only return an existing room if it's actively "playing" with 2 players
     const { data: mine } = await sb
       .from("rooms")
       .select("id,status,players,player_ids,letter,created_at")
@@ -24,20 +22,36 @@ export default async function handler(req, res) {
       .order("created_at", { ascending: false })
       .limit(1);
 
-    if (mine && mine[0]) {
+    if (mine?.[0]) {
       const room = mine[0];
-      const matched = Array.isArray(room.player_ids) && room.player_ids.length >= 2;
-      if (matched) return res.status(200).json({ matched: true, room });
+      if (Array.isArray(room.player_ids) && room.player_ids.length >= 2) {
+        return res.status(200).json({ matched: true, room });
+      }
     }
 
-    // Enqueue this player (upsert = idempotent)
-    const { error: qErr } = await sb
-      .from("queue")
-      .upsert({ player_id: playerId, player_name: playerName, lang: lang || "en", joined_at: new Date().toISOString() });
+    // Try upsert with lang column first, fall back without it if column doesn't exist
+    let qErr = null;
+    const withLang = await sb.from("queue").upsert({
+      player_id: playerId,
+      player_name: playerName,
+      lang: lang || "en",
+      joined_at: new Date().toISOString(),
+    });
+    qErr = withLang.error;
 
-    if (qErr) return res.status(500).json({ error: "Failed to join queue: " + qErr.message });
+    if (qErr) {
+      // lang column probably doesn't exist yet — retry without it
+      const withoutLang = await sb.from("queue").upsert({
+        player_id: playerId,
+        player_name: playerName,
+        joined_at: new Date().toISOString(),
+      });
+      if (withoutLang.error) {
+        return res.status(500).json({ error: "Failed to join queue: " + withoutLang.error.message });
+      }
+    }
 
-    // Cleanup very stale rows
+    // Cleanup stale rows
     try { await sb.from("queue").delete().lt("joined_at", nowMinusMinutes(30)); } catch {}
 
     return res.status(200).json({ matched: false, queued: true });
