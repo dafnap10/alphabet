@@ -154,6 +154,19 @@ body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif}
 /* share toast */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ok);color:#0a0a0f;font-weight:700;font-size:14px;padding:10px 20px;border-radius:8px;z-index:999;animation:fadeup .3s ease}
 @keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+/* share modal */
+.modalO{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:flex-end;justify-content:center;padding:18px}
+.modal{width:100%;max-width:520px;background:var(--surf);border:1px solid var(--brd);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
+.modalH{padding:14px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between}
+.modalT{font-weight:700;letter-spacing:.5px}
+.modalX{background:none;border:none;color:var(--mute);font-size:20px;cursor:pointer;padding:6px 10px}
+.modalX:hover{color:var(--txt)}
+.modalB{padding:12px 12px 16px;display:flex;flex-direction:column;gap:10px}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sbtn{border:1px solid var(--brd);background:var(--surf2);color:var(--txt);border-radius:10px;padding:14px 12px;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.sbtn:hover{border-color:var(--acc);color:var(--acc)}
+.smini{font-size:12px;color:var(--mute);padding:0 4px 2px}
+.sbox{border:1px solid var(--brd);background:var(--bg);border-radius:10px;padding:10px 12px;color:var(--mute);font-size:12px;white-space:pre-wrap;word-break:break-word}
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,9 +194,9 @@ export default function Home() {
   const [lobbyCopied, setLobbyCopied] = useState(false);
   // share score
   const [toast,       setToast]       = useState("");
-  const [isMobile,    setIsMobile]    = useState(false);
   const [shareOpen,   setShareOpen]   = useState(false);
   const [shareText,   setShareText]   = useState("");
+  const [shareUrl,    setShareUrl]    = useState("");
 
   const timerRef    = useRef(null);
   const pollRef     = useRef(null);
@@ -206,13 +219,6 @@ export default function Home() {
     el.textContent = CSS;
     document.head.appendChild(el);
     return () => el.remove();
-  useEffect(() => {
-    if (typeof navigator === "undefined") return;
-    const ua = navigator.userAgent || "";
-    const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
-    setIsMobile(mobile);
-  }, []);
-
   }, []);
 
   useEffect(() => () => {
@@ -389,29 +395,6 @@ export default function Home() {
     startTimer(() => doSubmit(l, room.id));
   }
 
-  async function rematchSameRoom() {
-    const roomId = roomR.current;
-    if (!roomId) return;
-    setError("");
-    try {
-      const r = await apiPost("/api/rematch", { roomId });
-      const newRoom = r.room;
-      const newLetter = newRoom.letter;
-      setLetter(newLetter); letterR.current = newLetter;
-      setAnswers({}); answersR.current = {};
-      setOppAnswers({});
-      setOppVal(null);
-      setValidation(null);
-      setSubmitted(false);
-      setValidating(false);
-      setScreen("online-game");
-      startTimer(() => doSubmit(newLetter, roomId));
-    } catch (e) {
-      setError("Rematch failed: " + e.message);
-    }
-  }
-
-
   async function cancelMatchmaking() {
     clearInterval(pollRef.current);
     try { await apiPost("/api/leave-queue", { playerId: myIdR.current }); } catch {}
@@ -440,151 +423,60 @@ export default function Home() {
   }, [screen, submitted, validating]);
 
   // ── Share score ───────────────────────────────────────────────────────────
-  function buildShareText(pts, total, ltr, isOnline, won, tie) {
+  // In-app browsers (Facebook/Instagram/WhatsApp) often don't show a full
+  // share sheet. So we ALWAYS open our Share Options modal and provide:
+  // - System share (if supported)
+  // - WhatsApp / Facebook / X links
+  // - Copy (inside the modal, per request)
+  function shareScore(pts, total, ltr, isOnline, won, tie) {
     const emoji = isOnline ? (won ? "🏆" : tie ? "🤝" : "😤") : "🎮";
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
-    return isOnline
-      ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}\nCan you beat me? ${window.location.origin}`
-      : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}\nTry to beat it! ${window.location.origin}`;
-  }
+    const url = typeof window !== "undefined" ? window.location.origin : "";
+    const text = isOnline
+      ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}\nCan you beat me? ${url}`
+      : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}\nTry to beat it! ${url}`;
 
-  async function copyText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setToast("Copied!");
-      setTimeout(() => setToast(""), 2500);
-      return true;
-    } catch {
-      setToast("Copy failed");
-      setTimeout(() => setToast(""), 2500);
-      return false;
-    }
-  }
-
-  function openWhatsApp(text) {
-    try {
-      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {}
-  }
-
-  function openFacebook(text) {
-    try {
-      const u = window.location.origin;
-      const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(u)}&quote=${encodeURIComponent(text)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {}
-  }
-
-  function openShareOptions(text) {
     setShareText(text);
+    setShareUrl(url);
     setShareOpen(true);
   }
 
-  // ── Share score ───────────────────────────────────────────────────────────
-  function shareScore(pts, total, ltr, isOnline, won, tie) {
-    const text = buildShareText(pts, total, ltr, isOnline, won, tie);
-
-    // Mobile web: use native share sheet when available.
-    // Include a URL so share targets (WhatsApp/Facebook/etc.) show up more reliably.
-    // If share isn't available (or fails), show explicit options.
-    if (navigator.share && isMobile) {
-      navigator
-        .share({ title: "Alphabet Game", text, url: window.location.origin })
-        .catch((e) => {
-          // If user cancels the share sheet, don't pop another modal.
-          if (e && (e.name === "AbortError" || String(e).includes("AbortError"))) return;
-          openShareOptions(text);
-        });
-      return;
+  function openShareLink(href) {
+    try {
+      const w = window.open(href, "_blank", "noopener,noreferrer");
+      if (!w) window.location.href = href;
+    } catch {
+      window.location.href = href;
     }
-
-    // Desktop/web: open options (Copy + WhatsApp/Facebook) instead of auto-copying.
-    openShareOptions(text);
   }
 
-  function copyScore(pts, total, ltr, isOnline, won, tie) {
-    const text = buildShareText(pts, total, ltr, isOnline, won, tie);
-    copyText(text);
+  async function doSystemShare() {
+    if (!navigator.share) return;
+    try {
+      // Passing BOTH text + url improves app availability on mobile.
+      await navigator.share({ title: "Alphabet Game", text: shareText, url: shareUrl });
+    } catch {
+      // user cancelled or share failed; keep modal open
+    }
   }
 
-  function ShareModal() {
-    if (!shareOpen) return null;
-    return (
-      <div
-        onClick={() => setShareOpen(false)}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.55)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 16,
-          zIndex: 9999,
-        }}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            width: "min(520px, 100%)",
-            background: "rgba(20,20,24,0.98)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 18,
-            padding: 14,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
-          }}
-        >
-          <div style={{ fontWeight: 800, marginBottom: 8, fontSize: 14, letterSpacing: 0.4 }}>
-            Share
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--mute)",
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 12,
-              padding: 10,
-              whiteSpace: "pre-wrap",
-              maxHeight: 180,
-              overflow: "auto",
-              marginBottom: 12,
-            }}
-          >
-            {shareText}
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              className="btn btn-g"
-              style={{ flex: 1, minWidth: 140 }}
-              onClick={() => copyText(shareText)}
-            >
-              <span className="bico">📋</span> Copy
-            </button>
-            <button
-              className="btn btn-g"
-              style={{ flex: 1, minWidth: 140 }}
-              onClick={() => openWhatsApp(shareText)}
-            >
-              <span className="bico">🟢</span> WhatsApp
-            </button>
-            <button
-              className="btn btn-g"
-              style={{ flex: 1, minWidth: 140 }}
-              onClick={() => openFacebook(shareText)}
-            >
-              <span className="bico">🔵</span> Facebook
-            </button>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-            <button className="btn btn-p" onClick={() => setShareOpen(false)}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  async function doCopyShare() {
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setToast("Copied!");
+      setTimeout(() => setToast(""), 1800);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = shareText;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+        setToast("Copied!");
+        setTimeout(() => setToast(""), 1800);
+      } catch {}
+    }
   }
 
   // ── Enter key: move to next category input ────────────────────────────────
@@ -640,7 +532,31 @@ export default function Home() {
   if (screen === "home") return (
     <div className="G"><div className="noise"/>
       {toast && <div className="toast">{toast}</div>}
-      <ShareModal />
+      {shareOpen && (
+        <div className="modalO" onClick={() => setShareOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modalH">
+              <div className="modalT">Share</div>
+              <button className="modalX" onClick={() => setShareOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="modalB">
+              <div className="smini">Choose an option</div>
+              <div className="sgrid">
+                {typeof navigator !== "undefined" && navigator.share && (
+                  <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
+                )}
+                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
+                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
+              </div>
+              <div className="smini">Preview</div>
+              <div className="sbox">{shareText}</div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="S">
         <div className="home">
           <div className="logo">
@@ -834,7 +750,31 @@ export default function Home() {
   if (screen === "solo-score") return (
     <div className="G"><div className="noise"/>
       {toast && <div className="toast">{toast}</div>}
-      <ShareModal />
+      {shareOpen && (
+        <div className="modalO" onClick={() => setShareOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modalH">
+              <div className="modalT">Share</div>
+              <button className="modalX" onClick={() => setShareOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="modalB">
+              <div className="smini">Choose an option</div>
+              <div className="sgrid">
+                {typeof navigator !== "undefined" && navigator.share && (
+                  <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
+                )}
+                <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
+                <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
+                <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
+              </div>
+              <div className="smini">Preview</div>
+              <div className="sbox">{shareText}</div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="S">
         <div className="sscrn">
           <div className="slbl">YOUR SCORE</div>
@@ -845,11 +785,6 @@ export default function Home() {
             onClick={() => shareScore(myPts, maxPts, letter, false)}>
             <span className="bico">📤</span> Share My Score
           </button>
-          {!isMobile && (
-            <button className="btn btn-g" style={{width:"100%"}} onClick={() => copyScore(myPts, maxPts, letter, false)}>
-              <span className="bico">📋</span> Copy
-            </button>
-          )}
           <div className="div" style={{width:"100%"}}/>
           <div className="rlist" style={{width:"100%"}}>
             {CATS.map(cat => {
@@ -921,7 +856,31 @@ export default function Home() {
     return (
       <div className="G"><div className="noise"/>
         {toast && <div className="toast">{toast}</div>}
-        <ShareModal />
+        {shareOpen && (
+          <div className="modalO" onClick={() => setShareOpen(false)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modalH">
+                <div className="modalT">Share</div>
+                <button className="modalX" onClick={() => setShareOpen(false)} aria-label="Close">✕</button>
+              </div>
+              <div className="modalB">
+                <div className="smini">Choose an option</div>
+                <div className="sgrid">
+                  {typeof navigator !== "undefined" && navigator.share && (
+                    <button className="sbtn" onClick={doSystemShare}><span>📲</span> System</button>
+                  )}
+                  <button className="sbtn" onClick={() => openShareLink(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}><span>🟢</span> WhatsApp</button>
+                  <button className="sbtn" onClick={() => openShareLink(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`)}><span>🔵</span> Facebook</button>
+                  <button className="sbtn" onClick={() => openShareLink(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`)}><span>𝕏</span> X</button>
+                  <button className="sbtn" onClick={() => openShareLink(`mailto:?subject=${encodeURIComponent("Alphabet Game")}&body=${encodeURIComponent(shareText)}`)}><span>✉️</span> Email</button>
+                  <button className="sbtn" onClick={doCopyShare}><span>📋</span> Copy</button>
+                </div>
+                <div className="smini">Preview</div>
+                <div className="sbox">{shareText}</div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="S">
           <div className="vsscrn">
             <div className="vshdr">RESULTS · {letter}</div>
@@ -939,11 +898,6 @@ export default function Home() {
               onClick={() => shareScore(myPts, maxPts, letter, true, won, tie)}>
               <span className="bico">📤</span> Share My Score
             </button>
-            {!isMobile && (
-              <button className="btn btn-g" style={{width:"100%"}} onClick={() => copyScore(myPts, maxPts, letter, true, won, tie)}>
-                <span className="bico">📋</span> Copy
-              </button>
-            )}
             <div className="div"/>
             <div className="aibadge" style={{alignSelf:"center",fontSize:12}}><div className="aidot"/> AI-validated</div>
             <div className="cmp">
@@ -967,7 +921,7 @@ export default function Home() {
               })}
             </div>
             <div style={{display:"flex",gap:10,paddingBottom:24}}>
-              <button className="btn btn-p" style={{flex:1}} onClick={() => (onlineMode==="private" ? rematchSameRoom() : setScreen("online-name"))}>Play Again</button>
+              <button className="btn btn-p" style={{flex:1}} onClick={() => setScreen("online-name")}>Play Again</button>
               <button className="btn btn-g" style={{flex:1}} onClick={() => setScreen("home")}>Home</button>
             </div>
           </div>
