@@ -357,7 +357,7 @@ export default function Home() {
         pollRef.current = setInterval(async () => {
           try {
             const ps = await apiGet(
-              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(name)}`
+              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}`
             );
             if (ps?.matched && ps.room) {
               clearInterval(pollRef.current);
