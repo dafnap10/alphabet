@@ -6,10 +6,14 @@ import Head from "next/head";
 // ─────────────────────────────────────────────────────────────────────────────
 const CATS    = ["Country","City","Animal","Food","Celebrity","Brand","Object"];
 const ICONS   = { Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐", Brand:"💼", Object:"📦" };
-const LETTERS = "ABCDEFGHIJKLMNOPRSTW";
+const LETTERS_EN = "ABCDEFGHIJKLMNOPRSTW";
+const LETTERS_HE = "אבגדהוזחטיכלמנסעפצקרשת";
 
 function makeId()     { return Math.random().toString(36).substring(2,10); }
-function pickLetter() { return LETTERS[Math.floor(Math.random()*LETTERS.length)]; }
+function pickLetter(lang) {
+  const pool = lang === "he" ? LETTERS_HE : LETTERS_EN;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 function score(v)     { return v ? Object.values(v).reduce((s,e)=>s+(e?.valid?10:0),0) : 0; }
 
 async function apiPost(path, body) {
@@ -64,7 +68,7 @@ const T = {
     privateLobby: "Private Lobby",
     lobbyCode: "LOBBY CODE",
     shareLink: "Share this link with your friend:",
-    copyInvite: "Copy Invite Link",
+    inviteFriend: "Invite Friend 🔗",
     copied: "✓ Copied!",
     waitingForFriend: "Waiting for your friend to join…",
     friendJoined: "Friend joined!",
@@ -146,7 +150,7 @@ const T = {
     privateLobby: "לובי פרטי",
     lobbyCode: "קוד הלובי",
     shareLink: "שתף את הקישור הזה עם החבר שלך:",
-    copyInvite: "העתק קישור הזמנה",
+    inviteFriend: "הזמן חבר 🔗",
     copied: "✓ הועתק!",
     waitingForFriend: "ממתין לחבר שיצטרף…",
     friendJoined: "החבר הצטרף!",
@@ -380,6 +384,7 @@ export default function Home() {
   const myIdR      = useRef("");
   const submittedR = useRef(false);
   const inputRefs  = useRef([]);
+  const langR      = useRef("en");
 
   const t = T[lang]; // current translations
 
@@ -387,6 +392,7 @@ export default function Home() {
   useEffect(() => { letterR.current    = letter;     }, [letter]);
   useEffect(() => { nameR.current      = playerName; }, [playerName]);
   useEffect(() => { submittedR.current = submitted;  }, [submitted]);
+  useEffect(() => { langR.current      = lang;        }, [lang]);
 
   // Apply RTL/LTR to html element
   useEffect(() => {
@@ -475,7 +481,7 @@ export default function Home() {
 
     let result;
     try {
-      result = await apiPost("/api/validate", { answers: answersR.current, letter: l });
+      result = await apiPost("/api/validate", { answers: answersR.current, letter: l, lang: langR.current });
     } catch {
       result = {};
       CATS.forEach(c => {
@@ -506,7 +512,7 @@ export default function Home() {
 
   // ── Solo ──────────────────────────────────────────────────────────────────
   function startSolo() {
-    const l = pickLetter();
+    const l = pickLetter(langR.current);
     setLetter(l); letterR.current = l;
     setAnswers({}); answersR.current = {};
     setScreen("solo-game");
@@ -524,7 +530,7 @@ export default function Home() {
     setScreen("matchmaking");
 
     try {
-      const result = await apiPost("/api/matchmake", { playerId: myId, playerName });
+      const result = await apiPost("/api/matchmake", { playerId: myId, playerName, lang: langR.current });
       if (result.matched) {
         const opp = (result.room.players||[]).find(p => p !== playerName) || "Opponent";
         launchGame(result.room, opp);
@@ -532,7 +538,7 @@ export default function Home() {
         pollRef.current = setInterval(async () => {
           try {
             const ps = await apiGet(
-              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}`
+              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}&lang=${encodeURIComponent(langR.current)}`
             );
             if (ps?.matched && ps.room) {
               clearInterval(pollRef.current);
@@ -619,6 +625,20 @@ export default function Home() {
         setTimeout(() => setLobbyCopied(false), 2500);
       } catch {}
     }
+  }
+
+  // ── Invite friend via share sheet (same as score sharing) ────────────────
+  async function shareLobbyLink() {
+    const link = getLobbyLink(lobbyCode);
+    const text = t.inviteCopyText(playerName.trim() || "Someone", link);
+    const url  = link;
+    setShareText(text);
+    setShareUrl(url);
+    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
+      try { await navigator.share({ title: "Alphabet Game", text, url }); return; }
+      catch (e) { if (e?.name === "AbortError" || e?.name === "NotAllowedError") return; }
+    }
+    setShareOpen(true);
   }
 
   // ── Launch game ───────────────────────────────────────────────────────────
@@ -1061,8 +1081,8 @@ export default function Home() {
                   <div className="lobby-code">{lobbyCode}</div>
                   <div className="lobby-hint">{t.shareLink}</div>
                   <div className="lobby-link" onClick={copyLobbyLink} title="Click to copy">{link}</div>
-                  <button className="btn btn-o" style={{fontSize:13,padding:"10px 16px"}} onClick={copyLobbyLink}>
-                    {lobbyCopied ? <span className="copied-badge">{t.copied}</span> : <><span className="bico">📋</span> {t.copyInvite}</>}
+                  <button className="btn btn-share" style={{width:"100%",marginTop:4}} onClick={shareLobbyLink}>
+                    <span className="bico">🔗</span> {t.inviteFriend}
                   </button>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"24px 0"}}>

@@ -1,12 +1,12 @@
 # 🎮 Alphabet Game
 
-AI-judged multiplayer word game. Fill categories starting with a random letter, beat the clock, and let Claude validate your answers.
+AI-judged multiplayer word game. Fill 7 categories starting with a random letter, beat the 60-second clock, and let Wikipedia validate your answers. Supports English and Hebrew.
 
 ## Tech Stack
 
 - **Next.js** — frontend + API routes
 - **Supabase** — database for rooms & matchmaking queue
-- **Anthropic Claude** — AI answer validation (server-side)
+- **Wikipedia API** — answer validation (no AI key needed)
 - **Vercel** — hosting
 
 ---
@@ -15,114 +15,83 @@ AI-judged multiplayer word game. Fill categories starting with a random letter, 
 
 ### 1. Supabase — create tables
 
-1. Go to [supabase.com](https://supabase.com) and create a free account
-2. Create a new project
-3. Go to **SQL Editor** and run this SQL:
+1. Go to [supabase.com](https://supabase.com) and create a free project
+2. Go to **SQL Editor** and run this SQL:
 
 ```sql
--- Matchmaking queue
-create table queue (
-  player_id text primary key,
+-- Matchmaking queue (lang column added for Hebrew/English letter support)
+create table if not exists queue (
+  player_id   text primary key,
   player_name text not null,
-  joined_at timestamptz default now()
+  lang        text default 'en',
+  joined_at   timestamptz default now()
 );
 
 -- Game rooms
-create table rooms (
-  id text primary key,
-  letter text not null,
-  status text default 'waiting',
-  players jsonb default '[]',
+create table if not exists rooms (
+  id         text primary key,
+  letter     text not null,
+  status     text default 'waiting',
+  players    jsonb default '[]',
   player_ids jsonb default '[]',
-  answers jsonb default '{}',
+  answers    jsonb default '{}',
   validation jsonb default '{}',
   created_at timestamptz default now()
 );
 
--- Allow public read/write (the API routes use the service role key
--- so this is fine — your keys stay server-side)
-alter table queue enable row level security;
-alter table rooms enable row level security;
+-- Private lobbies
+create table if not exists lobbies (
+  id         text primary key,
+  host_id    text not null,
+  host_name  text not null,
+  guest_id   text,
+  guest_name text,
+  letter     text not null,
+  status     text default 'waiting',
+  created_at timestamptz default now()
+);
 
-create policy "Allow all" on queue for all using (true) with check (true);
-create policy "Allow all" on rooms for all using (true) with check (true);
+-- RLS
+alter table queue   enable row level security;
+alter table rooms   enable row level security;
+alter table lobbies enable row level security;
+
+create policy "Allow all" on queue   for all using (true) with check (true);
+create policy "Allow all" on rooms   for all using (true) with check (true);
+create policy "Allow all" on lobbies for all using (true) with check (true);
 ```
 
-4. Go to **Settings → API** and copy:
-   - Project URL
-   - `anon` public key
-   - `service_role` secret key
+> **Upgrading from a previous version?** Run this to add the `lang` column:
+> ```sql
+> alter table queue add column if not exists lang text default 'en';
+> ```
 
-### 2. Anthropic — get API key
+3. Go to **Settings → API** and copy:
+   - Project URL → `SUPABASE_URL`
+   - `service_role` secret key → `SUPABASE_SERVICE_ROLE_KEY`
 
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Create an account and go to **API Keys**
-3. Create a new key and copy it
-
-### 3. Local development
+### 2. Local development
 
 ```bash
-# Clone your repo
-git clone https://github.com/YOUR_USERNAME/alphabet-game
-cd alphabet-game
-
-# Install dependencies
-npm install
-
-# Set up environment variables
 cp .env.local.example .env.local
-# Edit .env.local and fill in your keys
-
-# Run locally
+# Fill in SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+npm install
 npm run dev
-# Open http://localhost:3000
 ```
 
-### 4. Deploy to Vercel
+### 3. Deploy to Vercel
 
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel
-
-# Set environment variables on Vercel
-vercel env add NEXT_PUBLIC_SUPABASE_URL
-vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
-vercel env add SUPABASE_URL
-vercel env add SUPABASE_SERVICE_ROLE_KEY
-vercel env add ANTHROPIC_API_KEY
-
-# Redeploy with env vars
-vercel --prod
-```
-
-**Or use the Vercel dashboard:**
-1. Push code to GitHub
-2. Go to [vercel.com](https://vercel.com) → Import project → select your repo
-3. Before deploying, go to **Environment Variables** and add all 5 keys from `.env.local.example`
-4. Click Deploy
+1. Push to GitHub
+2. Import in Vercel
+3. Add environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+4. Deploy ✓
 
 ---
 
-## Project Structure
+## Features
 
-```
-alphabet-game/
-├── pages/
-│   ├── index.js          ← Main game UI
-│   ├── _app.js
-│   └── api/
-│       ├── validate.js   ← Calls Anthropic (server-side)
-│       ├── matchmake.js  ← Join queue / create room
-│       ├── match-status.js ← Poll for match
-│       ├── room.js       ← Get / update room
-│       └── leave-queue.js
-├── lib/
-│   └── supabase.js       ← Supabase client
-├── styles/
-│   └── globals.css
-├── .env.local.example    ← Copy to .env.local and fill in
-└── README.md
-```
+- 🎮 Solo mode + 1v1 online (random matchmaking & private lobbies)
+- 🌍 Hebrew & English — full UI translation, Hebrew Wikipedia validation, Hebrew letters
+- 🔗 Private lobby share: "Invite Friend" opens native share sheet (mobile) or share modal (desktop)
+- ⏱️ 60-second timer, AI-style Wikipedia validation
+- 🔁 Rematch in private rooms

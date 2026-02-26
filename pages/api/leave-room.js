@@ -1,11 +1,17 @@
 // pages/api/leave-room.js
-// Clears any existing random-match waiting room for a player.
-// Used when switching modes (private <-> random) and when going Home.
-//
-// We do NOT rely on any extra tables like `player_rooms`.
-// We only use `rooms` (and optionally `queue` if it exists).
+// Called when a player goes Home, cancels matchmaking, or switches modes.
+// - Removes from queue
+// - For random rooms (id is a hash, not a lobby code): marks as "finished"
+//   so it can never be returned as an active room in future matchmaking
+// - Does NOT touch private lobby rooms (they use alphanumeric codes like "AB3X7Q")
 
 import { getSupabaseAdmin } from "../../lib/supabase";
+
+// Lobby codes are 6 uppercase alphanumeric chars (A-Z0-9)
+// Random room IDs are 12-char hex hashes
+function isLobbyRoom(id) {
+  return /^[A-Z0-9]{4,8}$/.test(id || "");
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -16,26 +22,28 @@ export default async function handler(req, res) {
 
     const sb = getSupabaseAdmin();
 
-    // Remove from queue (best-effort; queue may not exist in some setups)
-    try {
-      await sb.from("queue").delete().eq("player_id", playerId);
-    } catch {
-      // ignore
-    }
+    // Remove from matchmaking queue
+    try { await sb.from("queue").delete().eq("player_id", playerId); } catch {}
 
-    // If player has a waiting room where they are the only player, delete it.
+    // Find rooms this player is in
     const { data: mine } = await sb
       .from("rooms")
       .select("id, status, player_ids")
       .contains("player_ids", [playerId])
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(10);
 
     if (Array.isArray(mine)) {
       for (const r of mine) {
         const pids = Array.isArray(r.player_ids) ? r.player_ids : [];
+
         if (r.status === "waiting" && pids.length === 1 && pids[0] === playerId) {
+          // Solo waiting room — delete it entirely
           await sb.from("rooms").delete().eq("id", r.id);
+        } else if (r.status === "playing" && !isLobbyRoom(r.id)) {
+          // Random match room — mark finished so it won't trap future matchmaking
+          // Private lobby rooms are left untouched (rematch support)
+          await sb.from("rooms").update({ status: "finished" }).eq("id", r.id);
         }
       }
     }

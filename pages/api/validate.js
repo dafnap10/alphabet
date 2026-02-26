@@ -1,20 +1,14 @@
-// validate.js
-// Real validation using Wikipedia + Wikidata.
-// Includes fixes for:
-// - Object: table, room, rock, note, crate
-// - Food: rambutan, apple, nuggets, chips
-// - Brand: apple (as Apple Inc.), nike, calvin klein
-// - City: ames, charleston
-// - Gibberish: "bbb", "aaa", "xyz", single repeated chars always invalid
+// validate.js — Wikipedia + Wikidata validation, supports Hebrew and English
 
 const CATS = ["Country", "City", "Animal", "Food", "Celebrity", "Brand", "Object"];
 
-const WIKI_API = "https://en.wikipedia.org/w/api.php";
+const WIKI_API_EN = "https://en.wikipedia.org/w/api.php";
+const WIKI_API_HE = "https://he.wikipedia.org/w/api.php";
 const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 
 const UA =
   process.env.WIKIMEDIA_USER_AGENT ||
-  "AlphabetGameValidator/1.2 (https://alphabetush.vercel.app/; contact: your-email@example.com)";
+  "AlphabetGameValidator/1.3 (https://alphabetush.vercel.app/)";
 
 const cache = new Map();
 const CACHE_TTL_MS = 1000 * 60 * 60;
@@ -35,30 +29,30 @@ function normAnswer(s) {
 
 function startsWithLetter(answer, letter) {
   if (!answer || !letter) return false;
-  return answer.trim().toLowerCase().startsWith(letter.trim().toLowerCase());
+  return answer.trim().startsWith(letter.trim());
 }
 
 function isObviouslyGibberish(answer) {
   const a = answer.trim();
-  // Too short
   if (a.length < 2) return true;
-  // Single repeated character: "bbb", "aaa", "zzz"
-  if (/^(.)\1+$/i.test(a)) return true;
-  // Mostly repeated chars e.g. "bbba": 3+ of same char in a short word
-  if (a.length <= 5 && /^(.)\1{2,}/i.test(a)) return true;
-  // No real letters
-  const letters = (a.match(/[A-Za-z]/g) || []).length;
+  if (/^(.)\1+$/u.test(a)) return true;
+  if (a.length <= 5 && /^(.)\1{2,}/u.test(a)) return true;
+  // Must have some letters (latin or Hebrew)
+  const letters = (a.match(/[A-Za-zא-ת]/gu) || []).length;
   if (letters === 0) return true;
-  // Very low letter ratio
   if (letters / a.length < 0.4) return true;
-  // Keyboard mash: all same consonants, no vowels, length >= 3
-  const vowels = (a.match(/[aeiou]/gi) || []).length;
-  if (a.length >= 3 && vowels === 0 && !/^[A-Z]{1,3}$/i.test(a)) return true;
+  // No vowels check only for Latin (Hebrew has no vowel letters)
+  const isHebrew = /[א-ת]/.test(a);
+  if (!isHebrew) {
+    const vowels = (a.match(/[aeiou]/gi) || []).length;
+    if (a.length >= 3 && vowels === 0 && !/^[A-Z]{1,3}$/i.test(a)) return true;
+  }
   return false;
 }
 
-async function wikiFetch(params) {
-  const url = new URL(WIKI_API);
+async function wikiFetch(params, lang = "en") {
+  const base = lang === "he" ? WIKI_API_HE : WIKI_API_EN;
+  const url = new URL(base);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   url.searchParams.set("origin", "*");
   const r = await fetch(url.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
@@ -74,15 +68,15 @@ async function wikidataFetch(params) {
   return r.json();
 }
 
-async function resolveWikipediaPage(title) {
-  const key = `wp:${title.toLowerCase()}`;
+async function resolveWikipediaPage(title, lang = "en") {
+  const key = `wp:${lang}:${title.toLowerCase()}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
   const data = await wikiFetch({
     action: "query", format: "json", redirects: "1",
     prop: "pageprops|categories", cllimit: "500", titles: title,
-  });
+  }, lang);
 
   const pages = data?.query?.pages;
   if (!pages) { cacheSet(key, { exists: false }); return { exists: false }; }
@@ -95,24 +89,24 @@ async function resolveWikipediaPage(title) {
     title: page.title,
     wikibaseItem: page.pageprops?.wikibase_item || null,
     categories: (page.categories || [])
-      .map((c) => (c.title || "").replace(/^Category:/, ""))
+      .map(c => (c.title || "").replace(/^(Category|קטגוריה):/, ""))
       .filter(Boolean),
   };
   cacheSet(key, resolved);
   return resolved;
 }
 
-async function wikipediaSearchTitles(query, limit = 8) {
-  const key = `wps:${query.toLowerCase()}:${limit}`;
+async function wikipediaSearchTitles(query, lang = "en", limit = 8) {
+  const key = `wps:${lang}:${query.toLowerCase()}:${limit}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
   const data = await wikiFetch({
     action: "query", format: "json", list: "search",
     srlimit: String(limit), srsearch: query,
-  });
+  }, lang);
 
-  const titles = (data?.query?.search || []).map((r) => r.title).filter(Boolean);
+  const titles = (data?.query?.search || []).map(r => r.title).filter(Boolean);
   cacheSet(key, titles);
   return titles;
 }
@@ -126,10 +120,9 @@ async function getWikidataInstanceOf(qid) {
   const data = await wikidataFetch({
     action: "wbgetentities", format: "json", ids: qid, props: "claims",
   });
-
   const ent = data?.entities?.[qid];
   const p31 = ent?.claims?.P31 || [];
-  const instanceOf = p31.map((snak) => snak?.mainsnak?.datavalue?.value?.id).filter(Boolean);
+  const instanceOf = p31.map(snak => snak?.mainsnak?.datavalue?.value?.id).filter(Boolean);
   cacheSet(key, instanceOf);
   return instanceOf;
 }
@@ -137,87 +130,90 @@ async function getWikidataInstanceOf(qid) {
 function keywordMatch(categories, keywords) {
   if (!categories?.length || !keywords?.length) return false;
   const hay = categories.join(" ").toLowerCase();
-  return keywords.some((k) => hay.includes(k.toLowerCase()));
+  return keywords.some(k => hay.includes(k.toLowerCase()));
 }
-
 function isDisambiguationTitle(t) {
-  return /\(disambiguation\)/i.test(t || "");
+  return /\(disambiguation\)|\(פירושונים\)/i.test(t || "");
 }
 
-const CAT_RULES = {
+// English category rules
+const CAT_RULES_EN = {
   Country: {
-    p31AnyOf: new Set(["Q6256", "Q3624078", "Q7275", "Q3024240", "Q15634554"]),
-    catKeywords: ["countries", "sovereign states", "states", "nations"],
+    p31AnyOf: new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554"]),
+    catKeywords: ["countries","sovereign states","states","nations"],
   },
   City: {
-    p31AnyOf: new Set(["Q515", "Q3957", "Q1549591", "Q15284", "Q1637706", "Q7930989"]),
-    catKeywords: ["cities", "towns", "municipalities", "capitals", "populated places", "villages"],
+    p31AnyOf: new Set(["Q515","Q3957","Q1549591","Q15284","Q1637706","Q7930989"]),
+    catKeywords: ["cities","towns","municipalities","capitals","populated places","villages"],
   },
   Animal: {
-    p31AnyOf: new Set(["Q16521", "Q7432", "Q68947", "Q23038290", "Q55983715"]),
-    catKeywords: ["animals", "fauna", "species", "genera", "mammals", "birds", "fish", "reptiles", "amphibians", "insects"],
+    p31AnyOf: new Set(["Q16521","Q7432","Q68947","Q23038290","Q55983715"]),
+    catKeywords: ["animals","fauna","species","genera","mammals","birds","fish","reptiles","amphibians","insects"],
   },
   Food: {
-    p31AnyOf: new Set([
-      "Q2095", "Q746549", "Q13233", "Q19861951", "Q11004",
-      "Q1364", "Q12140", "Q8502", "Q16521",
-    ]),
-    catKeywords: [
-      "foods", "food", "dishes", "cuisine", "beverages", "drinks", "desserts",
-      "recipes", "edible", "vegetables", "fruits", "crops", "plants used as food",
-      "culinary", "snack foods", "fast food",
-    ],
+    p31AnyOf: new Set(["Q2095","Q746549","Q13233","Q19861951","Q11004","Q1364","Q12140","Q8502","Q16521"]),
+    catKeywords: ["foods","food","dishes","cuisine","beverages","drinks","desserts","recipes","edible","vegetables","fruits","crops","plants used as food","culinary","snack foods","fast food"],
   },
   Celebrity: {
     p31AnyOf: new Set(["Q5"]),
-    catKeywords: ["people", "actors", "actresses", "singers", "musicians", "politicians", "writers", "athletes", "models"],
+    catKeywords: ["people","actors","actresses","singers","musicians","politicians","writers","athletes","models"],
   },
   Brand: {
-    p31AnyOf: new Set([
-      "Q431289", "Q783794", "Q4830453", "Q6881511",
-      "Q43229", "Q167270", "Q2424752",
-    ]),
-    catKeywords: [
-      "brands", "companies", "products", "trademarks", "manufacturers", "retailers",
-      "corporations", "fashion houses", "fashion brands", "clothing brands",
-      "luxury brands", "sportswear brands",
-    ],
+    p31AnyOf: new Set(["Q431289","Q783794","Q4830453","Q6881511","Q43229","Q167270","Q2424752"]),
+    catKeywords: ["brands","companies","products","trademarks","manufacturers","retailers","corporations","fashion houses","fashion brands","clothing brands","luxury brands","sportswear brands"],
   },
   Object: {
-    p31AnyOf: new Set([
-      "Q223557", "Q8205328", "Q2424752", "Q39546", "Q1183543", "Q11460",
-    ]),
-    catKeywords: [
-      "objects", "tools", "devices", "equipment", "inventions", "household",
-      "furniture", "rooms", "interior", "architecture", "building", "construction",
-      "containers", "storage", "packaging", "geology", "rocks", "minerals",
-      "musical notation", "writing", "stationery",
-    ],
+    p31AnyOf: new Set(["Q223557","Q8205328","Q2424752","Q39546","Q1183543","Q11460"]),
+    catKeywords: ["objects","tools","devices","equipment","inventions","household","furniture","rooms","interior","architecture","building","construction","containers","storage","packaging","geology","rocks","minerals","musical notation","writing","stationery"],
   },
 };
 
-const OBJECT_WHITELIST = new Set(["table", "room", "rock", "note", "crate"]);
-const FOOD_WHITELIST   = new Set(["rambutan", "apple", "nuggets", "chips"]);
-
-const WRONG_TYPE_P31 = {
-  human: "Q5", city: "Q515", country: "Q6256", org: "Q43229", company: "Q783794",
+// Hebrew category keywords (for Hebrew Wikipedia categories)
+const CAT_RULES_HE = {
+  Country:   { catKeywords: ["מדינות","מדינה","ארצות","ריבוניות","לאומים"] },
+  City:      { catKeywords: ["ערים","עיר","עירייה","מוניציפליות","עיירות","יישובים","בירות"] },
+  Animal:    { catKeywords: ["בעלי חיים","יונקים","עופות","דגים","זוחלים","חרקים","מינים","חיות"] },
+  Food:      { catKeywords: ["מזון","אוכל","מטבח","משקאות","ירקות","פירות","תזונה","מאכל","מנות","חטיפים"] },
+  Celebrity: { catKeywords: ["שחקנים","זמרים","מוזיקאים","ספורטאים","פוליטיקאים","סופרים","אנשים","ידוענים"] },
+  Brand:     { catKeywords: ["מותגים","חברות","תאגידים","יצרנים","קמעונאים","מוצרים","סימני מסחר"] },
+  Object:    { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה"] },
 };
 
-function categoryMatch(cat, instanceOfIds, categories, answerLower) {
-  const rules = CAT_RULES[cat];
+const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229", company:"Q783794" };
+const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
+const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
+
+const SEARCH_HINTS_EN = {
+  Brand:     ["brand","company","inc","corporation"],
+  Celebrity: ["actor","actress","singer","musician","comedian","athlete","writer"],
+  Food:      ["food","dish","fruit","vegetable","snack","fast food"],
+  City:      ["city","town","municipality","Iowa","South Carolina","West Virginia"],
+  Object:    ["object","furniture","container","geology","music","notation"],
+};
+
+const SEARCH_HINTS_HE = {
+  Brand:     ["חברה","מותג","תאגיד"],
+  Celebrity: ["שחקן","זמר","מוזיקאי","ספורטאי","פוליטיקאי"],
+  Food:      ["מזון","פרי","ירק","מאכל"],
+  City:      ["עיר","עיירה","יישוב"],
+  Object:    ["חפץ","כלי","ריהוט","סלע"],
+};
+
+function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
+  const rules = CAT_RULES_EN[cat];
   if (!rules) return false;
 
   if (cat === "Food") {
-    const isTaxon = (instanceOfIds || []).includes("Q16521");
+    const isTaxon = (instanceOfIds||[]).includes("Q16521");
     const hasFoodCats = keywordMatch(categories, rules.catKeywords);
-    const p31DirectFood = (instanceOfIds || []).some((id) => id !== "Q16521" && rules.p31AnyOf.has(id));
+    const p31DirectFood = (instanceOfIds||[]).some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
     if (p31DirectFood) return true;
-    if (FOOD_WHITELIST.has(answerLower)) return hasFoodCats;
+    if (FOOD_WHITELIST_EN.has(answerLower)) return hasFoodCats;
     if (isTaxon) return hasFoodCats;
     return hasFoodCats;
   }
 
-  if (cat === "Object" && OBJECT_WHITELIST.has(answerLower)) {
+  if (cat === "Object" && OBJECT_WHITELIST_EN.has(answerLower)) {
     const ids = instanceOfIds || [];
     if (ids.includes(WRONG_TYPE_P31.human)) return false;
     if (ids.includes(WRONG_TYPE_P31.company) || ids.includes(WRONG_TYPE_P31.org)) return false;
@@ -225,109 +221,159 @@ function categoryMatch(cat, instanceOfIds, categories, answerLower) {
     return true;
   }
 
-  if (instanceOfIds?.length) {
-    for (const id of instanceOfIds) {
-      if (rules.p31AnyOf?.has(id)) return true;
+  if (cat === "Brand") {
+    if ((instanceOfIds||[]).includes(WRONG_TYPE_P31.human)) {
+      if (!keywordMatch(categories, rules.catKeywords)) return false;
     }
+  }
+  if (cat === "Celebrity") {
+    const isHuman = (instanceOfIds||[]).includes(WRONG_TYPE_P31.human);
+    if (!isHuman && !keywordMatch(categories, rules.catKeywords)) return false;
+  }
+
+  if (instanceOfIds?.length) {
+    for (const id of instanceOfIds) { if (rules.p31AnyOf?.has(id)) return true; }
   }
   return keywordMatch(categories, rules.catKeywords);
 }
 
-const CATEGORY_SEARCH_HINTS = {
-  Brand:     ["brand", "company", "inc", "corporation"],
-  Celebrity: ["actor", "actress", "singer", "musician", "comedian", "athlete", "writer"],
-  Food:      ["food", "dish", "fruit", "vegetable", "snack", "fast food"],
-  City:      ["city", "town", "municipality", "Iowa", "South Carolina", "West Virginia"],
-  Object:    ["object", "furniture", "container", "geology", "music", "notation"],
-};
-
-async function checkPageAgainstCategory(cat, page, answerLower) {
+// Hebrew validation: use Wikidata P31 where available, then Hebrew Wikipedia categories
+async function categoryMatchHE(cat, page) {
   if (!page.exists) return false;
   if (isDisambiguationTitle(page.title)) return false;
 
+  const rules = CAT_RULES_HE[cat];
+  if (!rules) return false;
+
+  // Try Wikidata first (language-agnostic)
   let instanceOf = [];
   if (page.wikibaseItem) {
-    try { instanceOf = await getWikidataInstanceOf(page.wikibaseItem); } catch { instanceOf = []; }
+    try { instanceOf = await getWikidataInstanceOf(page.wikibaseItem); } catch {}
   }
 
-  if (cat === "Brand") {
-    if ((instanceOf || []).includes(WRONG_TYPE_P31.human)) {
-      if (!keywordMatch(page.categories, CAT_RULES.Brand.catKeywords)) return false;
+  // Map English CAT_RULES P31 for Hebrew too
+  const enRules = CAT_RULES_EN[cat];
+  if (instanceOf.length && enRules?.p31AnyOf) {
+    // Special handling same as English
+    if (cat === "Celebrity") {
+      if (instanceOf.includes(WRONG_TYPE_P31.human)) return true;
+    }
+    if (cat === "Brand") {
+      if (instanceOf.includes(WRONG_TYPE_P31.human)) {
+        return keywordMatch(page.categories, rules.catKeywords);
+      }
+    }
+    for (const id of instanceOf) {
+      if (enRules.p31AnyOf.has(id)) return true;
     }
   }
 
-  if (cat === "Celebrity") {
-    const isHuman = (instanceOf || []).includes(WRONG_TYPE_P31.human);
-    if (!isHuman && !keywordMatch(page.categories, CAT_RULES.Celebrity.catKeywords)) return false;
-  }
-
-  return categoryMatch(cat, instanceOf, page.categories, answerLower);
+  // Fall back to Hebrew category keywords
+  return keywordMatch(page.categories, rules.catKeywords);
 }
 
-async function validateOne(cat, answerRaw, letter) {
+async function validateOneEN(cat, answerRaw, letter) {
   const answer = normAnswer(answerRaw);
   const answerLower = answer.toLowerCase();
 
-  if (!answer)                           return { valid: false, reason: "Empty" };
-  if (!startsWithLetter(answer, letter)) return { valid: false, reason: `Does not start with "${letter}"` };
-  if (isObviouslyGibberish(answer))      return { valid: false, reason: "Looks like gibberish or invalid input" };
+  if (!answer)                            return { valid: false, reason: "Empty" };
+  if (!startsWithLetter(answer, letter))  return { valid: false, reason: `Does not start with "${letter}"` };
+  if (isObviouslyGibberish(answer))       return { valid: false, reason: "Looks like gibberish" };
 
-  // 1) Direct title lookup
-  const direct = await resolveWikipediaPage(answer);
+  // Direct lookup
+  const direct = await resolveWikipediaPage(answer, "en");
   if (direct.exists) {
-    const ok = await checkPageAgainstCategory(cat, direct, answerLower);
-    if (ok) return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
-  }
-
-  // 2) Search fallback
-  const hintWords = CATEGORY_SEARCH_HINTS[cat] || [];
-  const queries = [answer, ...hintWords.slice(0, 3).map((h) => `${answer} ${h}`)];
-
-  const seenQ = new Set();
-  const uniqQueries = queries.filter((q) => {
-    const k = q.toLowerCase();
-    if (seenQ.has(k)) return false;
-    seenQ.add(k);
-    return true;
-  });
-
-  for (const q of uniqQueries) {
-    const candidates = await wikipediaSearchTitles(q, 8);
-    for (const t of candidates) {
-      const p = await resolveWikipediaPage(t);
-      if (!p.exists) continue;
-      const ok = await checkPageAgainstCategory(cat, p, answerLower);
-      if (ok) return { valid: true, reason: `Wikipedia-verified (${p.title})` };
+    let instanceOf = [];
+    if (direct.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(direct.wikibaseItem); } catch {}
+    if (!isDisambiguationTitle(direct.title) && categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
+      return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
     }
   }
 
-  if (!direct.exists) return { valid: false, reason: "No matching English Wikipedia page" };
-  return {
-    valid: false,
-    reason: `Wikipedia page exists ("${direct.title}") but does not match category "${cat}"`,
-  };
+  // Search fallback
+  const hintWords = SEARCH_HINTS_EN[cat] || [];
+  const queries = [answer, ...hintWords.slice(0,3).map(h => `${answer} ${h}`)];
+  const seen = new Set();
+  for (const q of queries) {
+    if (seen.has(q.toLowerCase())) continue;
+    seen.add(q.toLowerCase());
+    const candidates = await wikipediaSearchTitles(q, "en", 8);
+    for (const t of candidates) {
+      const p = await resolveWikipediaPage(t, "en");
+      if (!p.exists || isDisambiguationTitle(p.title)) continue;
+      let instanceOf = [];
+      if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
+      if (categoryMatchEN(cat, instanceOf, p.categories, answerLower)) {
+        return { valid: true, reason: `Wikipedia-verified (${p.title})` };
+      }
+    }
+  }
+
+  if (!direct.exists) return { valid: false, reason: "No matching Wikipedia page found" };
+  return { valid: false, reason: `"${direct.title}" does not match category "${cat}"` };
+}
+
+async function validateOneHE(cat, answerRaw, letter) {
+  const answer = normAnswer(answerRaw);
+
+  if (!answer)                            return { valid: false, reason: "ריק" };
+  if (!startsWithLetter(answer, letter))  return { valid: false, reason: `לא מתחיל ב-"${letter}"` };
+  if (isObviouslyGibberish(answer))       return { valid: false, reason: "נראה כמו ג'יבריש" };
+
+  // 1) Direct Hebrew Wikipedia lookup
+  const direct = await resolveWikipediaPage(answer, "he");
+  if (direct.exists && !isDisambiguationTitle(direct.title)) {
+    if (await categoryMatchHE(cat, direct)) {
+      return { valid: true, reason: `אומת בויקיפדיה (${direct.title})` };
+    }
+  }
+
+  // 2) Search Hebrew Wikipedia
+  const hintWords = SEARCH_HINTS_HE[cat] || [];
+  const queries = [answer, ...hintWords.slice(0,2).map(h => `${answer} ${h}`)];
+  const seen = new Set();
+  for (const q of queries) {
+    if (seen.has(q)) continue;
+    seen.add(q);
+    const candidates = await wikipediaSearchTitles(q, "he", 8);
+    for (const t of candidates) {
+      const p = await resolveWikipediaPage(t, "he");
+      if (!p.exists || isDisambiguationTitle(p.title)) continue;
+      if (await categoryMatchHE(cat, p)) {
+        return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
+      }
+    }
+  }
+
+  if (!direct.exists) return { valid: false, reason: "לא נמצא דף ויקיפדיה תואם" };
+  return { valid: false, reason: `"${direct.title}" לא תואם לקטגוריה "${cat}"` };
 }
 
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).end();
 
-    const { answers, letter } = req.body || {};
+    const { answers, letter, lang } = req.body || {};
     if (!answers || !letter) return res.status(400).json({ error: "Missing answers or letter" });
 
+    const isHebrew = lang === "he";
     const result = {};
+
     for (const cat of CATS) {
-      result[cat] = await validateOne(cat, answers[cat] || "", letter);
+      result[cat] = isHebrew
+        ? await validateOneHE(cat, answers[cat] || "", letter)
+        : await validateOneEN(cat, answers[cat] || "", letter);
     }
+
     return res.status(200).json(result);
   } catch (err) {
     console.error("validate.js error:", err);
     const { answers, letter } = req.body || {};
     const fallback = {};
-    CATS.forEach((c) => {
-      const v = normAnswer((answers || {})[c] || "");
-      const ok = v.length >= 3 && startsWithLetter(v, letter || "");
-      fallback[c] = { valid: ok, reason: ok ? "Starts with letter (fallback)" : "Invalid (fallback)" };
+    CATS.forEach(c => {
+      const v = normAnswer((answers||{})[c] || "");
+      const ok = v.length >= 2 && startsWithLetter(v, letter || "");
+      fallback[c] = { valid: ok, reason: ok ? "Valid (fallback)" : "Invalid (fallback)" };
     });
     return res.status(200).json(fallback);
   }
