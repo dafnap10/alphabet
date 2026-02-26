@@ -281,7 +281,13 @@ export default function Home() {
 
     if (roomId) {
       try {
-        await apiPost("/api/room", { id: roomId, playerName: nameR.current, answers: answersR.current, validation: result });
+        await apiPost("/api/room", {
+          id: roomId,
+          playerId: myIdR.current,
+          playerName: nameR.current,
+          answers: answersR.current,
+          validation: result
+        });
       } catch(e) { console.error("save answers:", e); }
     } else {
       setScreen("solo-score");
@@ -433,11 +439,23 @@ async function cancelMatchmaking() {
       try {
         const room = await apiGet(`/api/room?id=${roomId}`);
         if (!room) return;
-        const opp = (room.players||[]).find(p => p !== nameR.current);
-        if (opp && room.answers?.[opp] && room.validation?.[opp]) {
+        // Prefer player_ids for robustness (players can choose the same name).
+        const myPid = myIdR.current;
+        const oppPid = (room.player_ids || []).find(pid => pid && pid !== myPid);
+        if (oppPid && room.answers?.[oppPid] && room.validation?.[oppPid]) {
           clearInterval(pollAnsRef.current);
-          setOppAnswers(room.answers[opp]);
-          setOppVal(room.validation[opp]);
+          setOppAnswers(room.answers[oppPid]);
+          setOppVal(room.validation[oppPid]);
+          setScreen("online-score");
+          return;
+        }
+
+        // Backward-compat fallback: older rooms keyed by player name.
+        const oppNameKey = (room.players||[]).find(p => p !== nameR.current);
+        if (oppNameKey && room.answers?.[oppNameKey] && room.validation?.[oppNameKey]) {
+          clearInterval(pollAnsRef.current);
+          setOppAnswers(room.answers[oppNameKey]);
+          setOppVal(room.validation[oppNameKey]);
           setScreen("online-score");
         }
       } catch {}
@@ -446,12 +464,16 @@ async function cancelMatchmaking() {
   }, [screen, submitted, validating]);
 
   // ── Share score ───────────────────────────────────────────────────────────
-  // In-app browsers (Facebook/Instagram/WhatsApp) often don't show a full
-  // share sheet. So we ALWAYS open our Share Options modal and provide:
-  // - System share (if supported)
-  // - WhatsApp / Facebook / X links
-  // - Copy (inside the modal, per request)
-  function shareScore(pts, total, ltr, isOnline, won, tie) {
+  // Desired behavior:
+  // - On mobile (when supported): use the native share sheet (navigator.share)
+  // - Otherwise: open our Share Options modal (WhatsApp/Facebook/X/Email/Copy)
+  const isProbablyMobile = () => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    return /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(ua);
+  };
+
+  async function shareScore(pts, total, ltr, isOnline, won, tie) {
     const emoji = isOnline ? (won ? "🏆" : tie ? "🤝" : "😤") : "🎮";
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
     const url = typeof window !== "undefined" ? window.location.origin : "";
@@ -461,6 +483,20 @@ async function cancelMatchmaking() {
 
     setShareText(text);
     setShareUrl(url);
+
+    // Prefer the native mobile share sheet when available.
+    // In many in-app browsers this may be missing; then we fall back to the modal.
+    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
+      try {
+        await navigator.share({ title: "Alphabet Game", text, url });
+        return; // shared successfully
+      } catch (e) {
+        // If user cancelled, don't show the modal.
+        if (e && (e.name === "AbortError" || e.name === "NotAllowedError")) return;
+        // otherwise fall through to modal
+      }
+    }
+
     setShareOpen(true);
   }
 

@@ -24,15 +24,21 @@ export default async function handler(req, res) {
 
     // POST or PATCH — save answers + validation for a player
     if (req.method === "POST" || req.method === "PATCH") {
-      const { id, playerName, answers, validation } = req.body || {};
-      if (!id || !playerName) return res.status(400).json({ error: "Missing id or playerName" });
+      const { id, playerId, playerName, answers, validation } = req.body || {};
+      if (!id) return res.status(400).json({ error: "Missing id" });
+      // IMPORTANT:
+      // Use playerId as the storage key when available.
+      // This prevents a critical bug where two players choose the same name,
+      // causing one submission to overwrite the other and both clients to get stuck.
+      const storageKey = String(playerId || playerName || "").trim();
+      if (!storageKey) return res.status(400).json({ error: "Missing playerId or playerName" });
 
       // IMPORTANT:
       // Two players can submit at nearly the same time.
       // A naive read→merge→write can lose the other player's submission (last write wins).
       // We mitigate this by retrying and re-merging until the stored JSON contains
       // all keys we intended to write.
-      const myKey = String(playerName);
+      const myKey = storageKey;
       const myAns = answers ?? null;
       const myVal = validation ?? null;
 
