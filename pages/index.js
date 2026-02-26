@@ -181,6 +181,7 @@ export default function Home() {
   const [lobbyCopied, setLobbyCopied] = useState(false);
   // share score
   const [toast,       setToast]       = useState("");
+  const [isMobile,    setIsMobile]    = useState(false);
 
   const timerRef    = useRef(null);
   const pollRef     = useRef(null);
@@ -203,6 +204,13 @@ export default function Home() {
     el.textContent = CSS;
     document.head.appendChild(el);
     return () => el.remove();
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    const ua = navigator.userAgent || "";
+    const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+    setIsMobile(mobile);
+  }, []);
+
   }, []);
 
   useEffect(() => () => {
@@ -379,6 +387,29 @@ export default function Home() {
     startTimer(() => doSubmit(l, room.id));
   }
 
+  async function rematchSameRoom() {
+    const roomId = roomR.current;
+    if (!roomId) return;
+    setError("");
+    try {
+      const r = await apiPost("/api/rematch", { roomId });
+      const newRoom = r.room;
+      const newLetter = newRoom.letter;
+      setLetter(newLetter); letterR.current = newLetter;
+      setAnswers({}); answersR.current = {};
+      setOppAnswers({});
+      setOppVal(null);
+      setValidation(null);
+      setSubmitted(false);
+      setValidating(false);
+      setScreen("online-game");
+      startTimer(() => doSubmit(newLetter, roomId));
+    } catch (e) {
+      setError("Rematch failed: " + e.message);
+    }
+  }
+
+
   async function cancelMatchmaking() {
     clearInterval(pollRef.current);
     try { await apiPost("/api/leave-queue", { playerId: myIdR.current }); } catch {}
@@ -407,21 +438,43 @@ export default function Home() {
   }, [screen, submitted, validating]);
 
   // ── Share score ───────────────────────────────────────────────────────────
-  function shareScore(pts, total, ltr, isOnline, won, tie) {
+  function buildShareText(pts, total, ltr, isOnline, won, tie) {
     const emoji = isOnline ? (won ? "🏆" : tie ? "🤝" : "😤") : "🎮";
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
-    const text = isOnline
+    return isOnline
       ? `${emoji} I scored ${pts}/${total} and ${result} in Alphabet Game! Letter: ${ltr}\nCan you beat me? ${window.location.origin}`
       : `🎮 I scored ${pts}/${total} in Alphabet Game! Letter: ${ltr}\nTry to beat it! ${window.location.origin}`;
+  }
 
-    if (navigator.share) {
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast("Copied!");
+      setTimeout(() => setToast(""), 2500);
+      return true;
+    } catch {
+      setToast("Copy failed");
+      setTimeout(() => setToast(""), 2500);
+      return false;
+    }
+  }
+
+  // ── Share score ───────────────────────────────────────────────────────────
+  function shareScore(pts, total, ltr, isOnline, won, tie) {
+    const text = buildShareText(pts, total, ltr, isOnline, won, tie);
+
+    // On mobile: prefer native share if available, otherwise copy.
+    // On desktop/web: we still allow share if supported, but user also gets an explicit Copy button.
+    if (navigator.share && isMobile) {
       navigator.share({ title: "Alphabet Game", text }).catch(() => {});
     } else {
-      navigator.clipboard.writeText(text).then(() => {
-        setToast("Score copied to clipboard!");
-        setTimeout(() => setToast(""), 2500);
-      });
+      copyText(text);
     }
+  }
+
+  function copyScore(pts, total, ltr, isOnline, won, tie) {
+    const text = buildShareText(pts, total, ltr, isOnline, won, tie);
+    copyText(text);
   }
 
   // ── Enter key: move to next category input ────────────────────────────────
@@ -680,6 +733,11 @@ export default function Home() {
             onClick={() => shareScore(myPts, maxPts, letter, false)}>
             <span className="bico">📤</span> Share My Score
           </button>
+          {!isMobile && (
+            <button className="btn btn-g" style={{width:"100%"}} onClick={() => copyScore(myPts, maxPts, letter, false)}>
+              <span className="bico">📋</span> Copy
+            </button>
+          )}
           <div className="div" style={{width:"100%"}}/>
           <div className="rlist" style={{width:"100%"}}>
             {CATS.map(cat => {
@@ -768,6 +826,11 @@ export default function Home() {
               onClick={() => shareScore(myPts, maxPts, letter, true, won, tie)}>
               <span className="bico">📤</span> Share My Score
             </button>
+            {!isMobile && (
+              <button className="btn btn-g" style={{width:"100%"}} onClick={() => copyScore(myPts, maxPts, letter, true, won, tie)}>
+                <span className="bico">📋</span> Copy
+              </button>
+            )}
             <div className="div"/>
             <div className="aibadge" style={{alignSelf:"center",fontSize:12}}><div className="aidot"/> AI-validated</div>
             <div className="cmp">
@@ -791,7 +854,7 @@ export default function Home() {
               })}
             </div>
             <div style={{display:"flex",gap:10,paddingBottom:24}}>
-              <button className="btn btn-p" style={{flex:1}} onClick={() => setScreen("online-name")}>Play Again</button>
+              <button className="btn btn-p" style={{flex:1}} onClick={() => (onlineMode==="private" ? rematchSameRoom() : setScreen("online-name"))}>Play Again</button>
               <button className="btn btn-g" style={{flex:1}} onClick={() => setScreen("home")}>Home</button>
             </div>
           </div>
