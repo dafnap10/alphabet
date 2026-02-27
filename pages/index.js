@@ -396,7 +396,13 @@ export default function Home() {
   const myIdR      = useRef("");
   const submittedR = useRef(false);
   const inputRefs  = useRef([]);
-  const langR      = useRef("en");
+  const langR      = useRef(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("lang");
+      if (p === "he" || p === "en") return p;
+    }
+    return "en";
+  });
 
   const t = T[lang]; // current translations
 
@@ -649,12 +655,14 @@ export default function Home() {
   // ── Invite friend via share sheet (same as score sharing) ────────────────
   async function shareLobbyLink() {
     const link = getLobbyLink(lobbyCode);
+    // inviteCopyText already includes the link at the end — don't pass url separately
+    // to navigator.share or it will appear twice. Pass empty url so share sheet
+    // doesn't append it again.
     const text = t.inviteCopyText(playerName.trim() || "Someone", link);
-    const url  = link;
     setShareText(text);
-    setShareUrl(url);
+    setShareUrl("");  // empty — link is already embedded in text
     if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
-      try { await navigator.share({ title: "Alphabet Game", text, url }); return; }
+      try { await navigator.share({ title: "Alphabet Game", text }); return; }
       catch (e) { if (e?.name === "AbortError" || e?.name === "NotAllowedError") return; }
     }
     setShareOpen(true);
