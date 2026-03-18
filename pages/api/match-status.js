@@ -19,6 +19,14 @@ function nowMinusMinutes(min) {
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  // Prevent browser/CDN caching — every poll must hit the server
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+
+  // Prevent browser/CDN caching — 304 responses break matchmaking polling
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+
   try {
     const { playerId, playerName, lang } = req.query;
     if (!playerId) return res.status(400).json({ error: "Missing playerId" });
