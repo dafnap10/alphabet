@@ -748,12 +748,13 @@ export default function Home() {
 
   // ── Poll opponent results ─────────────────────────────────────────────────
   useEffect(() => {
-    if (screen !== "online-game" || !submitted || validating) return;
+    if ((screen !== "online-game" && screen !== "online-score") || !submitted || validating) return;
+    if (screen === "online-score" && oppVal) return; // already have opp results
     const roomId = roomR.current;
     clearInterval(pollAnsRef.current);
     pollAnsRef.current = setInterval(async () => {
       try {
-        const room = await apiGet(`/api/room?id=${roomId}`);
+        const room = await apiGet(`/api/room?id=${roomId}&_=${Date.now()}`);
         if (!room) return;
         const myPid = myIdR.current;
         const oppPid = (room.player_ids||[]).find(pid => pid && pid !== myPid);
@@ -777,7 +778,7 @@ export default function Home() {
       } catch {}
     }, 2000);
     return () => clearInterval(pollAnsRef.current);
-  }, [screen, submitted, validating]);
+  }, [screen, submitted, validating, oppVal]);
 
   // ── Poll rematch ──────────────────────────────────────────────────────────
   useEffect(() => {
