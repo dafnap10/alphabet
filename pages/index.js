@@ -1281,7 +1281,10 @@ export default function Home() {
 
   // ── ONLINE SCORE ──────────────────────────────────────────────────────────
   if (screen==="online-score") {
-    const won=myPts>opPts, tie=myPts===opPts;
+    const hasOppResults = oppVal !== null;
+    const won = hasOppResults && myPts > opPts;
+    const tie = hasOppResults && myPts === opPts;
+    const lost = hasOppResults && myPts < opPts;
     return (
       <div className="G" dir={t.dir}><div className="noise"/>
         {toast && <div className="toast">{toast}</div>}
@@ -1289,9 +1292,9 @@ export default function Home() {
         <div className="S">
           <div className="vsscrn">
             <div className="vshdr">{t.results} · {letter}</div>
-            <div className={`bnr ${won?"bnr-w":tie?"bnr-t":"bnr-l"}`}>
-              <div className={`btxt ${won?"bt-w":tie?"bt-t":"bt-l"}`}>
-                {won ? t.youWin : tie ? t.tie : t.youLose}
+            <div className={`bnr ${!hasOppResults?"bnr-t":won?"bnr-w":tie?"bnr-t":"bnr-l"}`}>
+              <div className={`btxt ${!hasOppResults?"bt-t":won?"bt-w":tie?"bt-t":"bt-l"}`}>
+                {!hasOppResults ? "⏳ Waiting for opponent…" : won ? t.youWin : tie ? t.tie : t.youLose}
               </div>
             </div>
             <div className="srow">
