@@ -396,13 +396,13 @@ export default function Home() {
   const myIdR      = useRef("");
   const submittedR = useRef(false);
   const inputRefs  = useRef([]);
-  const langR      = useRef(() => {
+  const langR      = useRef((() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("lang");
       if (p === "he" || p === "en") return p;
     }
     return "en";
-  });
+  })());
 
   const t = T[lang]; // current translations
 
@@ -553,12 +553,21 @@ export default function Home() {
         const opp = (result.room.players||[]).find(p => p !== playerName) || "Opponent";
         launchGame(result.room, opp);
       } else {
+        // Timeout after 2 minutes
+        const matchTimeout = setTimeout(async () => {
+          clearInterval(pollRef.current);
+          try { await apiPost("/api/leave-queue", { playerId: myId }); } catch {}
+          setScreen("online-name");
+          setError(lang === "he" ? "לא נמצא יריב, נסה שוב" : "No opponent found, please try again");
+        }, 120000);
+
         pollRef.current = setInterval(async () => {
           try {
             const ps = await apiGet(
               `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}&lang=${encodeURIComponent(langR.current)}`
             );
             if (ps?.matched && ps.room) {
+              clearTimeout(matchTimeout);
               clearInterval(pollRef.current);
               const opp = (ps.room.players||[]).find(p => p !== nameR.current) || "Opponent";
               setQueueStatus("found");

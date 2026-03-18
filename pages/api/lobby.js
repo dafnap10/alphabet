@@ -155,6 +155,17 @@ export default async function handler(req, res) {
         }
       }
 
+      // Ensure both player_ids are present in the room (fix race where guest created room first)
+      if (room && Array.isArray(room.player_ids)) {
+        const ids = room.player_ids;
+        if (!ids.includes(playerId) || !ids.includes(lobby.guest_id)) {
+          const mergedIds = Array.from(new Set([playerId, lobby.guest_id, ...ids]));
+          const mergedNames = Array.from(new Set([playerName, lobby.guest_name, ...(room.players||[])]));
+          await sb.from("rooms").update({ player_ids: mergedIds, players: mergedNames }).eq("id", roomId);
+          room = { ...room, player_ids: mergedIds, players: mergedNames };
+        }
+      }
+
       if (!room) return res.status(200).json({ ready: false });
 
       return res.status(200).json({
