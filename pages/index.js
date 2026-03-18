@@ -564,7 +564,7 @@ export default function Home() {
         pollRef.current = setInterval(async () => {
           try {
             const ps = await apiGet(
-              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}&lang=${encodeURIComponent(langR.current)}`
+              `/api/match-status?playerId=${encodeURIComponent(myId)}&playerName=${encodeURIComponent(nameR.current)}&lang=${encodeURIComponent(langR.current)}&_=${Date.now()}`
             );
             if (ps?.matched && ps.room) {
               clearTimeout(matchTimeout);
