@@ -64,9 +64,21 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (!meQ) {
-      // Not in queue AND not in a room — only re-enqueue if truly not matched yet.
-      // This handles the race: leader removed me from queue but room insert
-      // hasn't propagated yet. Wait one cycle before re-enqueuing.
+      // Not in queue — check one more time if a room was created for us
+      // (leader may have removed us from queue and created the room simultaneously)
+      const { data: lateRoom } = await sb
+        .from("rooms")
+        .select("*")
+        .contains("player_ids", [playerId])
+        .eq("status", "playing")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (lateRoom?.[0] && Array.isArray(lateRoom[0].player_ids) && lateRoom[0].player_ids.length >= 2) {
+        return res.status(200).json({ matched: true, room: lateRoom[0] });
+      }
+
+      // No room found — re-enqueue
       const myName = (playerName && String(playerName).trim()) || "Player";
       try {
         const r1 = await sb.from("queue").upsert({
