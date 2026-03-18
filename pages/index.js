@@ -757,8 +757,9 @@ export default function Home() {
         const room = await apiGet(`/api/room?id=${roomId}&_=${Date.now()}`);
         if (!room) return;
         const myPid = myIdR.current;
+        if (!myPid) return; // wait until player id is loaded
         const oppPid = (room.player_ids||[]).find(pid => pid && pid !== myPid);
-        if (oppPid && room.answers?.[oppPid] && room.validation?.[oppPid]) {
+        if (oppPid && oppPid !== myPid && room.answers?.[oppPid] && room.validation?.[oppPid]) {
           clearInterval(pollAnsRef.current);
           clearInterval(timerRef.current);
           setOppAnswers(room.answers[oppPid]);
@@ -766,14 +767,16 @@ export default function Home() {
           setScreen("online-score");
           return;
         }
-        // Fallback: keyed by name
-        const oppN = (room.players||[]).find(p => p !== nameR.current);
-        if (oppN && room.answers?.[oppN] && room.validation?.[oppN]) {
-          clearInterval(pollAnsRef.current);
-          clearInterval(timerRef.current);
-          setOppAnswers(room.answers[oppN]);
-          setOppVal(room.validation[oppN]);
-          setScreen("online-score");
+        // Fallback: keyed by name — only if oppPid not found
+        if (!oppPid || oppPid === myPid) {
+          const oppN = (room.players||[]).find(p => p !== nameR.current);
+          if (oppN && room.answers?.[oppN] && room.validation?.[oppN]) {
+            clearInterval(pollAnsRef.current);
+            clearInterval(timerRef.current);
+            setOppAnswers(room.answers[oppN]);
+            setOppVal(room.validation[oppN]);
+            setScreen("online-score");
+          }
         }
       } catch {}
     }, 2000);
