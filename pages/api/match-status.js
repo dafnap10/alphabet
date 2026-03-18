@@ -37,13 +37,11 @@ export default async function handler(req, res) {
     try { await sb.from("queue").delete().lt("joined_at", nowMinusMinutes(30)); } catch {}
 
     // STEP 1: Already in an active room with 2 players?
-    // This is checked FIRST — before anything else — so a player who was
-    // removed from the queue by the leader still finds their room.
     const { data: mine } = await sb
       .from("rooms")
       .select("*")
-      .contains("player_ids", [playerId])
       .eq("status", "playing")
+      .filter("player_ids", "cs", `["${playerId}"]`)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -69,8 +67,8 @@ export default async function handler(req, res) {
       const { data: lateRoom } = await sb
         .from("rooms")
         .select("*")
-        .contains("player_ids", [playerId])
         .eq("status", "playing")
+        .filter("player_ids", "cs", `["${playerId}"]`)
         .order("created_at", { ascending: false })
         .limit(1);
 
