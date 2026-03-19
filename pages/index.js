@@ -4,8 +4,27 @@ import Head from "next/head";
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS & HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+const ALL_CATS = [
+  "Country","City","Animal","Food","Celebrity","Brand","Object",
+  "Sport","Movie","Vegetable","Fruit","Name","Car","Color","Flower",
+  "Instrument","Profession","River","Language","Clothing"
+];
+const ALL_ICONS = {
+  Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐",
+  Brand:"💼", Object:"📦", Sport:"⚽", Movie:"🎬", Vegetable:"🥦",
+  Fruit:"🍎", Name:"👤", Car:"🚗", Color:"🎨", Flower:"🌸",
+  Instrument:"🎸", Profession:"👷", River:"🏞️", Language:"🗣️", Clothing:"👕"
+};
+const NUM_CATS = 7;
+
+function pickCats() {
+  const shuffled = [...ALL_CATS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, NUM_CATS);
+}
+
+// Use dynamic cats per game — start with default
 const CATS    = ["Country","City","Animal","Food","Celebrity","Brand","Object"];
-const ICONS   = { Country:"🌍", City:"🏙️", Animal:"🦁", Food:"🍕", Celebrity:"⭐", Brand:"💼", Object:"📦" };
+const ICONS   = ALL_ICONS;
 const LETTERS_EN = "ABCDEFGHIJKLMNOPRSTW";
 const LETTERS_HE = "אבגדהוזחטיכלמנסעפצקרשת";
 
@@ -115,7 +134,7 @@ const T = {
     joinGame: "Join Game",
     langToggle: "עברית",
     timeUp: "Time is up",
-    catLabels: { Country:"Country", City:"City", Animal:"Animal", Food:"Food", Celebrity:"Celebrity", Brand:"Brand", Object:"Object" },
+    catLabels: { Country:"Country", City:"City", Animal:"Animal", Food:"Food", Celebrity:"Celebrity", Brand:"Brand", Object:"Object", Sport:"Sport", Movie:"Movie", Vegetable:"Vegetable", Fruit:"Fruit", Name:"Name", Car:"Car", Color:"Color", Flower:"Flower", Instrument:"Instrument", Profession:"Profession", River:"River", Language:"Language", Clothing:"Clothing" },
   },
   he: {
     dir: "rtl",
@@ -197,7 +216,7 @@ const T = {
     joinGame: "הצטרף למשחק",
     langToggle: "English",
     timeUp: "הזמן נגמר",
-    catLabels: { Country:"מדינה", City:"עיר", Animal:"חיה", Food:"אוכל", Celebrity:"מפורסם", Brand:"מותג", Object:"חפץ" },
+    catLabels: { Country:"מדינה", City:"עיר", Animal:"חיה", Food:"אוכל", Celebrity:"מפורסם", Brand:"מותג", Object:"חפץ", Sport:"ספורט", Movie:"סרט", Vegetable:"ירק", Fruit:"פרי", Name:"שם", Car:"רכב", Color:"צבע", Flower:"פרח", Instrument:"כלי נגינה", Profession:"מקצוע", River:"נהר", Language:"שפה", Clothing:"ביגוד" },
   }
 };
 
@@ -385,6 +404,7 @@ export default function Home() {
   const [shareOpen,   setShareOpen]   = useState(false);
   const [shareText,   setShareText]   = useState("");
   const [shareUrl,    setShareUrl]    = useState("");
+  const [gameCats,    setGameCats]    = useState(CATS);
 
   const timerRef   = useRef(null);
   const pollRef    = useRef(null);
@@ -491,7 +511,7 @@ export default function Home() {
   }
 
   // ── Submit + validate ─────────────────────────────────────────────────────
-  async function doSubmit(l, roomId, forceFinishAfter = false) {
+  async function doSubmit(l, roomId, forceFinishAfter = false, cats = gameCats) {
     if (submittedR.current) return;
     submittedR.current = true;
     setSubmitted(true);
@@ -499,10 +519,10 @@ export default function Home() {
 
     let result;
     try {
-      result = await apiPost("/api/validate", { answers: answersR.current, letter: l, lang: langR.current });
+      result = await apiPost("/api/validate", { answers: answersR.current, letter: l, lang: langR.current, cats });
     } catch {
       result = {};
-      CATS.forEach(c => {
+      cats.forEach(c => {
         const v = (answersR.current[c]||"").trim();
         const ok = v.length >= 3 && v.toLowerCase().startsWith(l.toLowerCase());
         result[c] = { valid: ok, reason: ok ? "Valid" : "Invalid or empty" };
@@ -531,10 +551,12 @@ export default function Home() {
   // ── Solo ──────────────────────────────────────────────────────────────────
   function startSolo() {
     const l = pickLetter(langR.current);
+    const cats = pickCats();
     setLetter(l); letterR.current = l;
+    setGameCats(cats);
     setAnswers({}); answersR.current = {};
     setScreen("solo-game");
-    startTimer(() => doSubmit(l, null));
+    startTimer(() => doSubmit(l, null, false, cats));
   }
 
   // ── Random matchmaking ────────────────────────────────────────────────────
@@ -878,7 +900,7 @@ export default function Home() {
   const tcol  = timeLeft > 20 ? "var(--ok)" : timeLeft > 10 ? "var(--acc)" : "var(--red)";
   const myPts = score(validation);
   const opPts = score(oppVal);
-  const maxPts = CATS.length * 10;
+  const maxPts = gameCats.length * 10;
   function setAns(cat, val) { setAnswers(p => ({...p, [cat]:val})); }
 
   // ── Reusable components ───────────────────────────────────────────────────
@@ -922,7 +944,7 @@ export default function Home() {
   function catRows(disabled) {
     return (
       <div className="cats">
-        {CATS.map((cat, idx) => {
+        {gameCats.map((cat, idx) => {
           const val = answers[cat]||"";
           const bad = val.length>=1 && !val.toLowerCase().startsWith(letter.toLowerCase());
           return (
@@ -967,7 +989,6 @@ export default function Home() {
           </div>
           <div className="menu">
             <button className="btn btn-p" onClick={()=>setScreen("solo-name")}><span className="bico">🎮</span> {t.playSolo}</button>
-            <button className="btn btn-o" onClick={()=>{setError("");setScreen("online-name");}}><span className="bico">🌐</span> {t.playOnline}</button>
           </div>
         </div>
       </div>
@@ -1221,12 +1242,12 @@ export default function Home() {
           </button>
           <div className="div" style={{width:"100%"}}/>
           <div className="rlist" style={{width:"100%"}}>
-            {CATS.map(cat => {
+            {gameCats.map(cat => {
               const val=answers[cat]||"", v=validation?.[cat], ok=v?.valid??false;
               return (
                 <div key={cat} className={`rrow ${ok?"rv":"ri"}`}>
-                  <span className="rico">{ICONS[cat]}</span>
-                  <span className="rcat">{t.catLabels[cat]}</span>
+                  <span className="rico">{ALL_ICONS[cat]}</span>
+                  <span className="rcat">{t.catLabels[cat] || cat}</span>
                   <div className="rbody">
                     <div className="rans">{val||<span style={{color:"var(--mute)",fontSize:13}}>—</span>}</div>
                     {v?.reason&&v.reason!=="empty"&&<div className="rwhy">{v.reason}</div>}
