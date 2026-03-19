@@ -953,6 +953,7 @@ export default function Home() {
       const next = l === "en" ? "he" : "en";
       gaEvent("click_language", { label: next });
       langR.current = next;
+      try { window.localStorage.setItem("alphabetush_lang", next); } catch {}
       // Update URL so lang persists on refresh (but don't add lobby params)
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
