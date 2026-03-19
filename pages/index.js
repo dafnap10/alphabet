@@ -2,6 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+function gaEvent(eventName, params = {}) {
+  try {
+    if (typeof window !== "undefined" && typeof window.gtag === "function") {
+      window.gtag("event", eventName, params);
+    }
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS & HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 const ALL_CATS = [
@@ -406,6 +417,7 @@ export default function Home() {
   const [shareUrl,    setShareUrl]    = useState("");
   const [gameCats,    setGameCats]    = useState(CATS);
   const [speedBonus,  setSpeedBonus]  = useState(0);
+  const [cookieConsent, setCookieConsent] = useState(null); // null=unknown, true=accepted, false=declined
 
   const timerRef   = useRef(null);
   const pollRef    = useRef(null);
@@ -467,7 +479,33 @@ export default function Home() {
     clearInterval(pollAnsRef.current);
   }, []);
 
-  // ── Parse URL params: ?lobby=CODE&lang=he&host=NAME ───────────────────────
+  // ── Cookie consent ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("cookie_consent");
+    if (stored === "true")  { setCookieConsent(true);  enableAnalytics(); }
+    if (stored === "false") { setCookieConsent(false); disableAnalytics(); }
+  }, []);
+
+  function enableAnalytics() {
+    if (typeof window === "undefined") return;
+    window["ga-disable-G-MJ9YDW5GW8"] = false;
+  }
+  function disableAnalytics() {
+    if (typeof window === "undefined") return;
+    window["ga-disable-G-MJ9YDW5GW8"] = true;
+  }
+  function acceptCookies() {
+    window.localStorage.setItem("cookie_consent", "true");
+    setCookieConsent(true);
+    enableAnalytics();
+    gaEvent("cookie_consent", { label: "accepted" });
+  }
+  function declineCookies() {
+    window.localStorage.setItem("cookie_consent", "false");
+    setCookieConsent(false);
+    disableAnalytics();
+  }
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -546,6 +584,18 @@ export default function Home() {
     const bonus = allCorrect ? timeAtSubmit : 0;
     setSpeedBonus(bonus);
 
+    // Analytics: game finished
+    const baseScore = cats.reduce((s, c) => s + (result[c]?.valid ? 10 : 0), 0);
+    const totalScore = baseScore + bonus;
+    const answersLabel = cats.map(c => `${c}:${(answersR.current[c]||"—").trim()}`).join("|");
+    gaEvent("game_finished", {
+      label: answersLabel,
+      score: totalScore,
+      speed_bonus: bonus,
+      letter: l,
+      lang: langR.current,
+    });
+
     if (roomId) {
       try {
         await apiPost("/api/room", {
@@ -564,6 +614,7 @@ export default function Home() {
 
   // ── Solo ──────────────────────────────────────────────────────────────────
   function startSolo() {
+    gaEvent("start_game", { label: playerName.trim() || "anonymous" });
     const l = pickLetter(langR.current);
     const cats = pickCats();
     setLetter(l); letterR.current = l;
@@ -729,6 +780,7 @@ export default function Home() {
 
   // ── Go home ───────────────────────────────────────────────────────────────
   function goHome() {
+    gaEvent("click_home", { from: screen });
     clearInterval(timerRef.current);
     clearInterval(pollRef.current);
     clearInterval(pollAnsRef.current);
@@ -845,9 +897,11 @@ export default function Home() {
     typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent||"");
 
   async function shareScore(pts, total, ltr, isOnline, won, tie) {
+    gaEvent("click_share", { label: isOnline ? "online" : "solo", score: pts });
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
     const text = isOnline ? t.shareTextOnline(pts, total, ltr, result) : t.shareTextSolo(pts, total, ltr);
-    const url = typeof window !== "undefined" ? `${window.location.origin}/` : "";
+    const base = typeof window !== "undefined" ? window.location.origin : "https://www.alphabetush.com";
+    const url = `${base}/?utm_source=share&utm_medium=viral&utm_campaign=score&lang=${langR.current}`;
     setShareText(text); setShareUrl(url);
     if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
       try { await navigator.share({ title:"Alphabet Game", text, url }); return; }
@@ -894,6 +948,7 @@ export default function Home() {
   function toggleLang() {
     setLang(l => {
       const next = l === "en" ? "he" : "en";
+      gaEvent("click_language", { label: next });
       langR.current = next;
       // Update URL so lang persists on refresh (but don't add lobby params)
       if (typeof window !== "undefined") {
@@ -955,7 +1010,44 @@ export default function Home() {
     );
   }
 
-  function catRows(disabled) {
+  function CookieBanner() {
+    if (cookieConsent !== null) return null;
+    const isHe = lang === "he";
+    return (
+      <div style={{
+        position:"fixed", bottom:0, left:0, right:0, zIndex:9999,
+        background:"#12121a", borderTop:"1px solid #2a2a3d",
+        padding:"16px 20px", display:"flex", flexWrap:"wrap",
+        alignItems:"center", gap:12, justifyContent:"space-between",
+        direction: isHe ? "rtl" : "ltr"
+      }}>
+        <div style={{flex:1, minWidth:200}}>
+          <p style={{color:"#f0f0ff", fontSize:13, margin:0, lineHeight:1.5}}>
+            {isHe
+              ? <>אנו משתמשים ב-Google Analytics לשיפור המשחק. <a href="/privacy" style={{color:"#e8ff47"}}>מדיניות פרטיות</a></>
+              : <>We use Google Analytics to improve the game. <a href="/privacy" style={{color:"#e8ff47"}}>Privacy Policy</a></>
+            }
+          </p>
+        </div>
+        <div style={{display:"flex", gap:8, flexShrink:0}}>
+          <button onClick={declineCookies} style={{
+            background:"transparent", border:"1px solid #2a2a3d",
+            color:"#6b6b8a", borderRadius:6, padding:"8px 16px",
+            fontSize:13, cursor:"pointer", fontFamily:"'DM Sans',sans-serif"
+          }}>
+            {isHe ? "דחייה" : "Decline"}
+          </button>
+          <button onClick={acceptCookies} style={{
+            background:"#e8ff47", border:"none", color:"#0a0a0f",
+            borderRadius:6, padding:"8px 16px", fontSize:13,
+            cursor:"pointer", fontWeight:700, fontFamily:"'DM Sans',sans-serif"
+          }}>
+            {isHe ? "אישור" : "Accept"}
+          </button>
+        </div>
+      </div>
+    );
+  }
     return (
       <div className="cats">
         {gameCats.map((cat, idx) => {
@@ -994,6 +1086,7 @@ export default function Home() {
       <div className="noise"/>
       {toast && <div className="toast">{toast}</div>}
       <ShareModal/>
+      <CookieBanner/>
       <div className="S">
         <div className="home">
           <div className="logo">
@@ -1002,7 +1095,18 @@ export default function Home() {
             <div className="lsub">{t.tagline}</div>
           </div>
           <div className="menu">
-            <button className="btn btn-p" onClick={()=>setScreen("solo-name")}><span className="bico">🎮</span> {t.playSolo}</button>
+            <button className="btn btn-p" onClick={()=>{ gaEvent("click_play_solo"); setScreen("solo-name"); }}><span className="bico">🎮</span> {t.playSolo}</button>
+          </div>
+          <div style={{marginTop:40,textAlign:"center",display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
+            <a href="/privacy" style={{color:"var(--mute)",fontSize:12,textDecoration:"none"}} onMouseOver={e=>e.target.style.color="var(--acc)"} onMouseOut={e=>e.target.style.color="var(--mute)"}>
+              {lang==="he" ? "מדיניות פרטיות" : "Privacy Policy"}
+            </a>
+            <span style={{color:"var(--brd)"}}>·</span>
+            <a href="/terms" style={{color:"var(--mute)",fontSize:12,textDecoration:"none"}} onMouseOver={e=>e.target.style.color="var(--acc)"} onMouseOut={e=>e.target.style.color="var(--mute)"}>
+              {lang==="he" ? "תנאי שימוש" : "Terms of Service"}
+            </a>
+            <span style={{color:"var(--brd)"}}>·</span>
+            <span style={{color:"var(--mute)",fontSize:12}}>© 2026 Alphabetush</span>
           </div>
         </div>
       </div>
@@ -1277,7 +1381,7 @@ export default function Home() {
             })}
           </div>
           <div style={{display:"flex",gap:10,width:"100%"}}>
-            <button className="btn btn-p" style={{flex:1}} onClick={startSolo}>{t.playAgain}</button>
+            <button className="btn btn-p" style={{flex:1}} onClick={()=>{ gaEvent("click_play_again", { mode:"solo" }); startSolo(); }}>{t.playAgain}</button>
             <button className="btn btn-g" style={{flex:1}} onClick={goHome}>{t.home}</button>
           </div>
         </div>
