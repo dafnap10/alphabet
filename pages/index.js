@@ -984,7 +984,6 @@ export default function Home() {
     );
   }
 
-  // Fixed legal links — always visible at bottom of screen
   function LegalLinks() {
     const isHe = lang === "he";
     return (
@@ -994,15 +993,11 @@ export default function Home() {
         display:"flex", gap:12, alignItems:"center",
         zIndex:100, whiteSpace:"nowrap"
       }}>
-        <a href="/privacy" style={{color:"#6b6b8a",fontSize:11,textDecoration:"none"}}
-          onMouseOver={e=>e.target.style.color="#e8ff47"}
-          onMouseOut={e=>e.target.style.color="#6b6b8a"}>
+        <a href="/privacy" style={{color:"#a0a0b8",fontSize:12,textDecoration:"none"}}>
           {isHe ? "פרטיות" : "Privacy"}
         </a>
-        <span style={{color:"#2a2a3d",fontSize:11}}>·</span>
-        <a href="/terms" style={{color:"#6b6b8a",fontSize:11,textDecoration:"none"}}
-          onMouseOver={e=>e.target.style.color="#e8ff47"}
-          onMouseOut={e=>e.target.style.color="#6b6b8a"}>
+        <span style={{color:"#a0a0b8",fontSize:12}}>·</span>
+        <a href="/terms" style={{color:"#a0a0b8",fontSize:12,textDecoration:"none"}}>
           {isHe ? "תנאים" : "Terms"}
         </a>
       </div>
@@ -1044,23 +1039,23 @@ export default function Home() {
     return (
       <div style={{
         position:"fixed", bottom:0, left:0, right:0, zIndex:9999,
-        background:"#12121a", borderTop:"1px solid #2a2a3d",
-        padding:"16px 20px", display:"flex", flexWrap:"wrap",
+        background:"#1c1c28", borderTop:"2px solid #e8ff47",
+        padding:"14px 20px", display:"flex", flexWrap:"wrap",
         alignItems:"center", gap:12, justifyContent:"space-between",
         direction: isHe ? "rtl" : "ltr"
       }}>
         <div style={{flex:1, minWidth:200}}>
           <p style={{color:"#f0f0ff", fontSize:13, margin:0, lineHeight:1.5}}>
             {isHe
-              ? <>אנו משתמשים ב-Google Analytics לשיפור המשחק. <a href="/privacy" style={{color:"#e8ff47"}}>מדיניות פרטיות</a></>
-              : <>We use Google Analytics to improve the game. <a href="/privacy" style={{color:"#e8ff47"}}>Privacy Policy</a></>
+              ? <>🍪 אנו משתמשים ב-Google Analytics. <a href="/privacy" style={{color:"#e8ff47"}}>מדיניות פרטיות</a></>
+              : <>🍪 We use Google Analytics. <a href="/privacy" style={{color:"#e8ff47"}}>Privacy Policy</a></>
             }
           </p>
         </div>
         <div style={{display:"flex", gap:8, flexShrink:0}}>
           <button onClick={declineCookies} style={{
-            background:"transparent", border:"1px solid #2a2a3d",
-            color:"#6b6b8a", borderRadius:6, padding:"8px 16px",
+            background:"transparent", border:"1px solid #6b6b8a",
+            color:"#f0f0ff", borderRadius:6, padding:"8px 16px",
             fontSize:13, cursor:"pointer", fontFamily:"'DM Sans',sans-serif"
           }}>
             {isHe ? "דחייה" : "Decline"}
