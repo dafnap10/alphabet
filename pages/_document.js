@@ -18,22 +18,25 @@ export default function Document() {
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://alphabetush.vercel.app/" />
+        <meta property="og:url" content="https://www.alphabetush.com/" />
         <meta property="og:title" content="Alphabet Game – AI Word Game" />
         <meta property="og:description" content="Fill 7 categories in 60 seconds. AI-judged answers. Play free!" />
-        <meta property="og:image" content="https://alphabetush.vercel.app/og.png" />
+        <meta property="og:image" content="https://www.alphabetush.com/og.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:type" content="image/png" />
 
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Alphabet Game – AI Word Game" />
         <meta name="twitter:description" content="Fill 7 categories in 60 seconds. AI-judged. Free to play!" />
-        <meta name="twitter:image" content="https://alphabetush.vercel.app/og.png" />
+        <meta name="twitter:image" content="https://www.alphabetush.com/og.png" />
 
         {/* Canonical + hreflang */}
-        <link rel="canonical" href="https://alphabetush.vercel.app/" />
-        <link rel="alternate" hrefLang="en" href="https://alphabetush.vercel.app/" />
-        <link rel="alternate" hrefLang="he" href="https://alphabetush.vercel.app/he" />
-        <link rel="alternate" hrefLang="x-default" href="https://alphabetush.vercel.app/" />
+        <link rel="canonical" href="https://www.alphabetush.com/" />
+        <link rel="alternate" hrefLang="en" href="https://www.alphabetush.com/" />
+        <link rel="alternate" hrefLang="he" href="https://www.alphabetush.com/he" />
+        <link rel="alternate" hrefLang="x-default" href="https://www.alphabetush.com/" />
 
         {/* Structured data */}
         <script
@@ -42,7 +45,7 @@ export default function Document() {
             "@context": "https://schema.org",
             "@type": "WebApplication",
             "name": "Alphabet Game",
-            "url": "https://alphabetush.vercel.app/",
+            "url": "https://www.alphabetush.com/",
             "description": "Fill 7 categories with words starting with the same letter in 60 seconds. AI-judged answers.",
             "applicationCategory": "GameApplication",
             "operatingSystem": "Web",
