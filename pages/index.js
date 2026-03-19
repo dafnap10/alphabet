@@ -781,7 +781,7 @@ export default function Home() {
       } catch {}
     }, 2000);
     return () => clearInterval(pollAnsRef.current);
-  }, [screen, submitted, validating, oppVal]);
+  }, [screen, submitted, validating]);
 
   // ── Poll rematch ──────────────────────────────────────────────────────────
   useEffect(() => {
