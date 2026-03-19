@@ -522,6 +522,10 @@ export default function Home() {
     setSubmitted(true);
     setValidating(true);
 
+    // Capture time remaining BEFORE stopping the timer
+    const timeAtSubmit = timeLeftR.current;
+    clearInterval(timerRef.current);
+
     let result;
     try {
       result = await apiPost("/api/validate", { answers: answersR.current, letter: l, lang: langR.current, cats });
@@ -539,7 +543,7 @@ export default function Home() {
 
     // Speed bonus: only if ALL categories are correct
     const allCorrect = cats.every(c => result[c]?.valid);
-    const bonus = allCorrect ? timeLeftR.current : 0;
+    const bonus = allCorrect ? timeAtSubmit : 0;
     setSpeedBonus(bonus);
 
     if (roomId) {
