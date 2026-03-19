@@ -5,16 +5,16 @@ export async function getServerSideProps({ res }) {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://alphabetush.vercel.app/</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://alphabetush.vercel.app/"/>
-    <xhtml:link rel="alternate" hreflang="he" href="https://alphabetush.vercel.app/he"/>
+    <loc>https://www.alphabetush.com/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.alphabetush.com/"/>
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.alphabetush.com/he"/>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://alphabetush.vercel.app/he</loc>
-    <xhtml:link rel="alternate" hreflang="he" href="https://alphabetush.vercel.app/he"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://alphabetush.vercel.app/"/>
+    <loc>https://www.alphabetush.com/he</loc>
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.alphabetush.com/he"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.alphabetush.com/"/>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
