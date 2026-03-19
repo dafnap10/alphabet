@@ -54,6 +54,15 @@ export default function Document() {
         <style dangerouslySetInnerHTML={{ __html:
           `html{background:#0a0a0f}body{background:#0a0a0f;margin:0}#__next{opacity:0;transition:opacity 0.15s}`
         }} />
+
+        {/* Google Analytics */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-MJ9YDW5GW8" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-MJ9YDW5GW8');
+        `}} />
       </Head>
       <body>
         <Main />
