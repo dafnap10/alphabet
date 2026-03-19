@@ -8,7 +8,7 @@ const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 
 const UA =
   process.env.WIKIMEDIA_USER_AGENT ||
-  "AlphabetGameValidator/1.3 (https://alphabetush.vercel.app/)";
+  "AlphabetGameValidator/1.3 (https://www.alphabetush.com/)";
 
 const cache = new Map();
 const CACHE_TTL_MS = 1000 * 60 * 60;
