@@ -1071,6 +1071,8 @@ export default function Home() {
       </div>
     );
   }
+
+  function catRows(disabled) {
     return (
       <div className="cats">
         {gameCats.map((cat, idx) => {
