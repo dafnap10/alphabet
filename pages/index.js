@@ -405,6 +405,7 @@ export default function Home() {
   const [shareText,   setShareText]   = useState("");
   const [shareUrl,    setShareUrl]    = useState("");
   const [gameCats,    setGameCats]    = useState(CATS);
+  const [speedBonus,  setSpeedBonus]  = useState(0);
 
   const timerRef   = useRef(null);
   const pollRef    = useRef(null);
@@ -415,6 +416,7 @@ export default function Home() {
   const nameR      = useRef("");
   const myIdR      = useRef("");
   const submittedR = useRef(false);
+  const timeLeftR  = useRef(60);
   const inputRefs  = useRef([]);
   const langR      = useRef((() => {
     if (typeof window !== "undefined") {
@@ -491,11 +493,14 @@ export default function Home() {
     setSubmitted(false);
     setValidation(null);
     setValidating(false);
+    setSpeedBonus(0);
     submittedR.current = false;
+    timeLeftR.current = DURATION;
     let tm = DURATION;
     timerRef.current = setInterval(() => {
       tm--;
       setTimeLeft(tm);
+      timeLeftR.current = tm;
       if (tm <= 0) { clearInterval(timerRef.current); onEnd(); }
     }, 1000);
   }
@@ -531,6 +536,11 @@ export default function Home() {
 
     setValidation(result);
     setValidating(false);
+
+    // Speed bonus: only if ALL categories are correct
+    const allCorrect = cats.every(c => result[c]?.valid);
+    const bonus = allCorrect ? timeLeftR.current : 0;
+    setSpeedBonus(bonus);
 
     if (roomId) {
       try {
@@ -898,9 +908,9 @@ export default function Home() {
   // ── Derived ───────────────────────────────────────────────────────────────
   const pct   = (timeLeft / DURATION) * 100;
   const tcol  = timeLeft > 20 ? "var(--ok)" : timeLeft > 10 ? "var(--acc)" : "var(--red)";
-  const myPts = score(validation);
-  const opPts = score(oppVal);
-  const maxPts = gameCats.length * 10;
+  const myPts  = score(validation) + speedBonus;
+  const opPts  = score(oppVal);
+  const maxPts = gameCats.length * 10 + DURATION;
   function setAns(cat, val) { setAnswers(p => ({...p, [cat]:val})); }
 
   // ── Reusable components ───────────────────────────────────────────────────
@@ -1235,6 +1245,11 @@ export default function Home() {
           <div className="slbl">{t.yourScore}</div>
           <div className="sbig">{myPts}</div>
           <div className="smax">{t.outOf} {maxPts} · {t.letter} {letter}</div>
+          {speedBonus > 0 && (
+            <div style={{background:"rgba(232,255,71,.1)",border:"1px solid var(--acc)",borderRadius:8,padding:"6px 14px",fontSize:13,color:"var(--acc)",fontWeight:600}}>
+              ⚡ {lang==="he" ? `בונוס מהירות +${speedBonus}` : `Speed bonus +${speedBonus}`}
+            </div>
+          )}
           <div className="aibadge" style={{fontSize:12}}><div className="aidot"/> {t.aiValidated}</div>
           <button className="btn btn-share" style={{width:"100%"}}
             onClick={()=>shareScore(myPts,maxPts,letter,false)}>
