@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -74,7 +74,7 @@ const EN = {
     },
     {
       h: "10. Contact",
-      p: `For any privacy questions, contact us at: alphabetush@gmail.com`
+      p: `For any privacy questions, contact us at: info@alphabetush.com`
     }
   ]
 };
@@ -131,13 +131,23 @@ const HE = {
     },
     {
       h: "10. יצירת קשר",
-      p: `לשאלות בנושא פרטיות, צרו קשר: alphabetush@gmail.com`
+      p: `לשאלות בנושא פרטיות, צרו קשר: info@alphabetush.com`
     }
   ]
 };
 
 export default function Privacy() {
-  const [lang, setLang] = useState("he");
+  const [lang, setLang] = useState("en");
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("lang");
+    if (p === "he" || p === "en") setLang(p);
+    else {
+      // Check localStorage from main game
+      const stored = window.localStorage.getItem("alphabetush_lang");
+      if (stored === "he") setLang("he");
+    }
+  }, []);
   const content = lang === "he" ? HE : EN;
 
   return (
