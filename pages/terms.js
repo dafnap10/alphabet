@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -69,7 +69,7 @@ const EN = {
     },
     {
       h: "10. Contact",
-      p: `For questions about these terms: alphabetush@gmail.com`
+      p: `For questions about these terms: info@alphabetush.com`
     }
   ]
 };
@@ -121,13 +121,22 @@ const HE = {
     },
     {
       h: "10. יצירת קשר",
-      p: `לשאלות בנושא תנאים אלה: alphabetush@gmail.com`
+      p: `לשאלות בנושא תנאים אלה: info@alphabetush.com`
     }
   ]
 };
 
 export default function Terms() {
-  const [lang, setLang] = useState("he");
+  const [lang, setLang] = useState("en");
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("lang");
+    if (p === "he" || p === "en") setLang(p);
+    else {
+      const stored = window.localStorage.getItem("alphabetush_lang");
+      if (stored === "he") setLang("he");
+    }
+  }, []);
   const content = lang === "he" ? HE : EN;
 
   return (
