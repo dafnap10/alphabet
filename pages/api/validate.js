@@ -166,17 +166,81 @@ const CAT_RULES_EN = {
     p31AnyOf: new Set(["Q223557","Q8205328","Q2424752","Q39546","Q1183543","Q11460"]),
     catKeywords: ["objects","tools","devices","equipment","inventions","household","furniture","rooms","interior","architecture","building","construction","containers","storage","packaging","geology","rocks","minerals","musical notation","writing","stationery"],
   },
+  Sport: {
+    p31AnyOf: new Set(["Q349","Q2736","Q31629"]),
+    catKeywords: ["sports","sport","games","athletics","martial arts","olympic"],
+  },
+  Movie: {
+    p31AnyOf: new Set(["Q11424","Q24869","Q506240","Q1261214"]),
+    catKeywords: ["films","movies","film","cinema","animated film"],
+  },
+  Vegetable: {
+    p31AnyOf: new Set(["Q11004","Q16521"]),
+    catKeywords: ["vegetables","vegetable","root vegetables","leaf vegetables","edible plants","crops"],
+  },
+  Fruit: {
+    p31AnyOf: new Set(["Q1364","Q16521"]),
+    catKeywords: ["fruits","fruit","berries","citrus","tropical fruits","edible"],
+  },
+  Name: {
+    p31AnyOf: new Set(["Q202444","Q11879590","Q3409032"]),
+    catKeywords: ["given names","first names","masculine given names","feminine given names","names"],
+  },
+  Car: {
+    p31AnyOf: new Set(["Q3231690","Q9415","Q39495","Q1361017"]),
+    catKeywords: ["cars","automobiles","vehicles","motor vehicles","car models","automotive"],
+  },
+  Color: {
+    p31AnyOf: new Set(["Q1075","Q4082790"]),
+    catKeywords: ["colors","colour","shades","hues","pigments"],
+  },
+  Flower: {
+    p31AnyOf: new Set(["Q16521","Q506"]),
+    catKeywords: ["flowers","flowering plants","ornamental plants","garden plants","flora"],
+  },
+  Instrument: {
+    p31AnyOf: new Set(["Q34379","Q163829"]),
+    catKeywords: ["musical instruments","instruments","percussion","string instruments","wind instruments","keyboard instruments"],
+  },
+  Profession: {
+    p31AnyOf: new Set(["Q28640","Q12737077"]),
+    catKeywords: ["occupations","professions","jobs","careers","trades","vocations"],
+  },
+  River: {
+    p31AnyOf: new Set(["Q4022","Q55659167"]),
+    catKeywords: ["rivers","streams","waterways","tributaries"],
+  },
+  Language: {
+    p31AnyOf: new Set(["Q34770","Q1288568","Q33742"]),
+    catKeywords: ["languages","dialects","natural languages","language families"],
+  },
+  Clothing: {
+    p31AnyOf: new Set(["Q11460","Q2483509","Q3241045"]),
+    catKeywords: ["clothing","garments","fashion","apparel","footwear","accessories","costume"],
+  },
 };
 
-// Hebrew category keywords (for Hebrew Wikipedia categories)
 const CAT_RULES_HE = {
-  Country:   { catKeywords: ["מדינות","מדינה","ארצות","ריבוניות","לאומים"] },
-  City:      { catKeywords: ["ערים","עיר","עירייה","מוניציפליות","עיירות","יישובים","בירות"] },
-  Animal:    { catKeywords: ["בעלי חיים","יונקים","עופות","דגים","זוחלים","חרקים","מינים","חיות"] },
-  Food:      { catKeywords: ["מזון","אוכל","מטבח","משקאות","ירקות","פירות","תזונה","מאכל","מנות","חטיפים"] },
-  Celebrity: { catKeywords: ["שחקנים","זמרים","מוזיקאים","ספורטאים","פוליטיקאים","סופרים","אנשים","ידוענים"] },
-  Brand:     { catKeywords: ["מותגים","חברות","תאגידים","יצרנים","קמעונאים","מוצרים","סימני מסחר"] },
-  Object:    { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה"] },
+  Country:    { catKeywords: ["מדינות","מדינה","ארצות","ריבוניות","לאומים"] },
+  City:       { catKeywords: ["ערים","עיר","עירייה","מוניציפליות","עיירות","יישובים","בירות"] },
+  Animal:     { catKeywords: ["בעלי חיים","יונקים","עופות","דגים","זוחלים","חרקים","מינים","חיות"] },
+  Food:       { catKeywords: ["מזון","אוכל","מטבח","משקאות","ירקות","פירות","תזונה","מאכל","מנות","חטיפים"] },
+  Celebrity:  { catKeywords: ["שחקנים","זמרים","מוזיקאים","ספורטאים","פוליטיקאים","סופרים","אנשים","ידוענים"] },
+  Brand:      { catKeywords: ["מותגים","חברות","תאגידים","יצרנים","קמעונאים","מוצרים","סימני מסחר"] },
+  Object:     { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה"] },
+  Sport:      { catKeywords: ["ספורט","ענפי ספורט","משחקים","אתלטיקה","אולימפי","כדורגל","כדורסל"] },
+  Movie:      { catKeywords: ["סרטים","סרט","קולנוע","אנימציה","קומדיה","דרמה","בימוי"] },
+  Vegetable:  { catKeywords: ["ירקות","ירק","צמחים אכילים","גידולים","ירקות שורש","ירקות עלים"] },
+  Fruit:      { catKeywords: ["פירות","פרי","פירות הדר","פירות טרופיים","פירות יער","גידולים"] },
+  Name:       { catKeywords: ["שמות פרטיים","שמות","שם פרטי","שמות גבריים","שמות נשיים"] },
+  Car:        { catKeywords: ["מכוניות","רכבים","אוטומובילים","דגמי רכב","תעשיית הרכב"] },
+  Color:      { catKeywords: ["צבעים","צבע","גוונים","פיגמנטים","גוון","צבעוני"] },
+  Flower:     { catKeywords: ["פרחים","פרח","צמחי נוי","גינון","צמחיה","פריחה"] },
+  Instrument: { catKeywords: ["כלי נגינה","כלים","מוזיקה","פריטה","נגינה","כלי הקשה","כלי מיתר","כלי נשיפה"] },
+  Profession: { catKeywords: ["מקצועות","מקצוע","עיסוקים","קריירה","עבודה","תפקידים"] },
+  River:      { catKeywords: ["נהרות","נהר","זרמים","מים","גאוגרפיה","אגן ניקוז"] },
+  Language:   { catKeywords: ["שפות","שפה","ניבים","לשון","שפות טבעיות","משפחות לשון"] },
+  Clothing:   { catKeywords: ["ביגוד","בגדים","אופנה","לבוש","הלבשה","נעליים","אקססוריז"] },
 };
 
 const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229", company:"Q783794" };
@@ -184,19 +248,45 @@ const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
 const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
 
 const SEARCH_HINTS_EN = {
-  Brand:     ["brand","company","inc","corporation"],
-  Celebrity: ["actor","actress","singer","musician","comedian","athlete","writer"],
-  Food:      ["food","dish","fruit","vegetable","snack","fast food"],
-  City:      ["city","town","municipality","Iowa","South Carolina","West Virginia"],
-  Object:    ["object","furniture","container","geology","music","notation"],
+  Brand:      ["brand","company","inc","corporation"],
+  Celebrity:  ["actor","actress","singer","musician","comedian","athlete","writer"],
+  Food:       ["food","dish","fruit","vegetable","snack","fast food"],
+  City:       ["city","town","municipality","Iowa","South Carolina","West Virginia"],
+  Object:     ["object","furniture","container","geology","music","notation"],
+  Sport:      ["sport","game","athletics","martial art","olympic sport"],
+  Movie:      ["film","movie","animated","comedy","drama"],
+  Vegetable:  ["vegetable","plant","crop","root","leaf"],
+  Fruit:      ["fruit","berry","citrus","tropical"],
+  Name:       ["given name","first name","masculine name","feminine name"],
+  Car:        ["car","automobile","vehicle","model","automotive"],
+  Color:      ["color","colour","shade","hue","pigment"],
+  Flower:     ["flower","plant","bloom","garden","flora"],
+  Instrument: ["instrument","musical","percussion","string","wind","keyboard"],
+  Profession: ["occupation","profession","job","career","trade"],
+  River:      ["river","stream","waterway","tributary"],
+  Language:   ["language","dialect","tongue","linguistic"],
+  Clothing:   ["clothing","garment","fashion","apparel","footwear"],
 };
 
 const SEARCH_HINTS_HE = {
-  Brand:     ["חברה","מותג","תאגיד"],
-  Celebrity: ["שחקן","זמר","מוזיקאי","ספורטאי","פוליטיקאי"],
-  Food:      ["מזון","פרי","ירק","מאכל"],
-  City:      ["עיר","עיירה","יישוב"],
-  Object:    ["חפץ","כלי","ריהוט","סלע"],
+  Brand:      ["חברה","מותג","תאגיד"],
+  Celebrity:  ["שחקן","זמר","מוזיקאי","ספורטאי","פוליטיקאי"],
+  Food:       ["מזון","פרי","ירק","מאכל"],
+  City:       ["עיר","עיירה","יישוב"],
+  Object:     ["חפץ","כלי","ריהוט","סלע"],
+  Sport:      ["ספורט","משחק","אתלטיקה"],
+  Movie:      ["סרט","קולנוע","בימוי"],
+  Vegetable:  ["ירק","צמח","גידול"],
+  Fruit:      ["פרי","הדר","טרופי"],
+  Name:       ["שם","פרטי"],
+  Car:        ["מכונית","רכב","דגם"],
+  Color:      ["צבע","גוון"],
+  Flower:     ["פרח","צמח","גינה"],
+  Instrument: ["כלי נגינה","מוזיקה","נגינה"],
+  Profession: ["מקצוע","עיסוק","עבודה"],
+  River:      ["נהר","מים","זרם"],
+  Language:   ["שפה","לשון","ניב"],
+  Clothing:   ["בגד","ביגוד","לבוש"],
 };
 
 function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
@@ -353,24 +443,36 @@ export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).end();
 
-    const { answers, letter, lang } = req.body || {};
+    const { answers, letter, lang, cats } = req.body || {};
     if (!answers || !letter) return res.status(400).json({ error: "Missing answers or letter" });
 
     const isHebrew = lang === "he";
     const result = {};
 
-    for (const cat of CATS) {
+    // Use dynamic cats from request, fallback to defaults
+    const activeCats = Array.isArray(cats) && cats.length > 0 ? cats : CATS;
+
+    for (const cat of activeCats) {
+      const answer = normAnswer(answers[cat] || "");
+
+      // Enforce minimum 2 characters (must be a real word, not just the letter)
+      if (answer.length < 2) {
+        result[cat] = { valid: false, reason: isHebrew ? "תשובה קצרה מדי" : "Answer too short" };
+        continue;
+      }
+
       result[cat] = isHebrew
-        ? await validateOneHE(cat, answers[cat] || "", letter)
-        : await validateOneEN(cat, answers[cat] || "", letter);
+        ? await validateOneHE(cat, answer, letter)
+        : await validateOneEN(cat, answer, letter);
     }
 
     return res.status(200).json(result);
   } catch (err) {
     console.error("validate.js error:", err);
-    const { answers, letter } = req.body || {};
+    const { answers, letter, cats } = req.body || {};
+    const activeCats = Array.isArray(cats) && cats.length > 0 ? cats : CATS;
     const fallback = {};
-    CATS.forEach(c => {
+    activeCats.forEach(c => {
       const v = normAnswer((answers||{})[c] || "");
       const ok = v.length >= 2 && startsWithLetter(v, letter || "");
       fallback[c] = { valid: ok, reason: ok ? "Valid (fallback)" : "Invalid (fallback)" };
