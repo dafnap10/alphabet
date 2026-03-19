@@ -484,7 +484,8 @@ export default function Home() {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem("cookie_consent");
     if (stored === "true")  { setCookieConsent(true);  enableAnalytics(); }
-    if (stored === "false") { setCookieConsent(false); disableAnalytics(); }
+    else if (stored === "false") { setCookieConsent(false); disableAnalytics(); }
+    // If not set yet — banner will show (cookieConsent stays null)
   }, []);
 
   function enableAnalytics() {
@@ -899,12 +900,14 @@ export default function Home() {
   async function shareScore(pts, total, ltr, isOnline, won, tie) {
     gaEvent("click_share", { label: isOnline ? "online" : "solo", score: pts });
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
-    const text = isOnline ? t.shareTextOnline(pts, total, ltr, result) : t.shareTextSolo(pts, total, ltr);
     const base = typeof window !== "undefined" ? window.location.origin : "https://www.alphabetush.com";
     const url = `${base}/?utm_source=share&utm_medium=viral&utm_campaign=score&lang=${langR.current}`;
-    setShareText(text); setShareUrl(url);
+    // Embed URL directly in text so it appears in all share methods
+    const baseText = isOnline ? t.shareTextOnline(pts, total, ltr, result) : t.shareTextSolo(pts, total, ltr);
+    const text = `${baseText}\n${url}`;
+    setShareText(text); setShareUrl("");
     if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
-      try { await navigator.share({ title:"Alphabet Game", text, url }); return; }
+      try { await navigator.share({ title:"Alphabet Game", text }); return; }
       catch(e) { if (e?.name==="AbortError" || e?.name==="NotAllowedError") return; }
     }
     setShareOpen(true);
@@ -977,6 +980,31 @@ export default function Home() {
     return (
       <div className={`lang-wrap ${t.dir==="rtl" ? "lang-wrap-rtl" : "lang-wrap-ltr"}`}>
         <button className="btn-lang" onClick={toggleLang}>{t.langToggle}</button>
+      </div>
+    );
+  }
+
+  // Fixed legal links — always visible at bottom of screen
+  function LegalLinks() {
+    const isHe = lang === "he";
+    return (
+      <div style={{
+        position:"fixed", bottom: cookieConsent === null ? 80 : 12,
+        left:"50%", transform:"translateX(-50%)",
+        display:"flex", gap:12, alignItems:"center",
+        zIndex:100, whiteSpace:"nowrap"
+      }}>
+        <a href="/privacy" style={{color:"#6b6b8a",fontSize:11,textDecoration:"none"}}
+          onMouseOver={e=>e.target.style.color="#e8ff47"}
+          onMouseOut={e=>e.target.style.color="#6b6b8a"}>
+          {isHe ? "פרטיות" : "Privacy"}
+        </a>
+        <span style={{color:"#2a2a3d",fontSize:11}}>·</span>
+        <a href="/terms" style={{color:"#6b6b8a",fontSize:11,textDecoration:"none"}}
+          onMouseOver={e=>e.target.style.color="#e8ff47"}
+          onMouseOut={e=>e.target.style.color="#6b6b8a"}>
+          {isHe ? "תנאים" : "Terms"}
+        </a>
       </div>
     );
   }
@@ -1087,6 +1115,7 @@ export default function Home() {
       {toast && <div className="toast">{toast}</div>}
       <ShareModal/>
       <CookieBanner/>
+      <LegalLinks/>
       <div className="S">
         <div className="home">
           <div className="logo">
@@ -1097,17 +1126,6 @@ export default function Home() {
           <div className="menu">
             <button className="btn btn-p" onClick={()=>{ gaEvent("click_play_solo"); setScreen("solo-name"); }}><span className="bico">🎮</span> {t.playSolo}</button>
           </div>
-          <div style={{marginTop:40,textAlign:"center",display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
-            <a href="/privacy" style={{color:"var(--mute)",fontSize:12,textDecoration:"none"}} onMouseOver={e=>e.target.style.color="var(--acc)"} onMouseOut={e=>e.target.style.color="var(--mute)"}>
-              {lang==="he" ? "מדיניות פרטיות" : "Privacy Policy"}
-            </a>
-            <span style={{color:"var(--brd)"}}>·</span>
-            <a href="/terms" style={{color:"var(--mute)",fontSize:12,textDecoration:"none"}} onMouseOver={e=>e.target.style.color="var(--acc)"} onMouseOut={e=>e.target.style.color="var(--mute)"}>
-              {lang==="he" ? "תנאי שימוש" : "Terms of Service"}
-            </a>
-            <span style={{color:"var(--brd)"}}>·</span>
-            <span style={{color:"var(--mute)",fontSize:12}}>© 2026 Alphabetush</span>
-          </div>
         </div>
       </div>
     </div>
@@ -1115,7 +1133,7 @@ export default function Home() {
 
   // ── SOLO NAME ─────────────────────────────────────────────────────────────
   if (screen==="solo-name") return (
-    <div className="G" dir={t.dir}><LangBtn/><div className="noise"/>
+    <div className="G" dir={t.dir}><LangBtn/><CookieBanner/><LegalLinks/><div className="noise"/>
       <div className="S">
         <div className="oscr">
           <button className="back" onClick={goHome}>{t.back}</button>
@@ -1348,6 +1366,8 @@ export default function Home() {
     <div className="G" dir={t.dir}><div className="noise"/>
       {toast && <div className="toast">{toast}</div>}
       <ShareModal/>
+      <CookieBanner/>
+      <LegalLinks/>
       <div className="S">
         <div className="sscrn">
           <div className="slbl">{t.yourScore}</div>
