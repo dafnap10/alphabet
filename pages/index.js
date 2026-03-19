@@ -758,7 +758,7 @@ export default function Home() {
     const text = t.inviteCopyText(playerName.trim() || "Someone", link);
     setShareText(text);
     setShareUrl("");  // empty — link is already embedded in text
-    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
+    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile() && !isFacebookBrowser()) {
       try { await navigator.share({ title: "Alphabet Game", text }); return; }
       catch (e) { if (e?.name === "AbortError" || e?.name === "NotAllowedError") return; }
     }
@@ -897,6 +897,9 @@ export default function Home() {
   const isProbablyMobile = () =>
     typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent||"");
 
+  const isFacebookBrowser = () =>
+    typeof navigator !== "undefined" && /FBAN|FBAV|FB_IAB/i.test(navigator.userAgent||"");
+
   async function shareScore(pts, total, ltr, isOnline, won, tie) {
     gaEvent("click_share", { label: isOnline ? "online" : "solo", score: pts });
     const result = isOnline ? (won ? "Won" : tie ? "Tied" : "Lost") : "";
@@ -906,7 +909,7 @@ export default function Home() {
     const baseText = isOnline ? t.shareTextOnline(pts, total, ltr, result) : t.shareTextSolo(pts, total, ltr);
     const text = `${baseText}\n${url}`;
     setShareText(text); setShareUrl("");
-    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile()) {
+    if (typeof navigator !== "undefined" && navigator.share && isProbablyMobile() && !isFacebookBrowser()) {
       try { await navigator.share({ title:"Alphabet Game", text }); return; }
       catch(e) { if (e?.name==="AbortError" || e?.name==="NotAllowedError") return; }
     }
