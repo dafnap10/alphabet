@@ -14,17 +14,17 @@ export default function HeLanding() {
         <meta name="keywords" content="משחק אלפבית, סטופ אונליין, משחק מילים בעברית, משחק קטגוריות, סטופ, זאפ, משחק AI, אלפבית, מילים, קטגוריות, משחק חינמי" />
         <meta property="og:title" content="משחק האלפבית — סטופ אונליין" />
         <meta property="og:description" content="מלא 7 קטגוריות תוך 60 שניות. ה-AI שופט את התשובות שלך!" />
-        <meta property="og:url" content="https://alphabetush.vercel.app/he" />
-        <meta property="og:image" content="https://alphabetush.vercel.app/og.png" />
+        <meta property="og:url" content="https://www.alphabetush.com/he" />
+        <meta property="og:image" content="https://www.alphabetush.com/og.png" />
         <meta property="og:locale" content="he_IL" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="משחק האלפבית — סטופ אונליין" />
         <meta name="twitter:description" content="מלא 7 קטגוריות תוך 60 שניות. שופט AI. חינמי!" />
-        <meta name="twitter:image" content="https://alphabetush.vercel.app/og.png" />
-        <link rel="canonical" href="https://alphabetush.vercel.app/he" />
-        <link rel="alternate" hrefLang="he" href="https://alphabetush.vercel.app/he" />
-        <link rel="alternate" hrefLang="en" href="https://alphabetush.vercel.app/" />
+        <meta name="twitter:image" content="https://www.alphabetush.com/og.png" />
+        <link rel="canonical" href="https://www.alphabetush.com/he" />
+        <link rel="alternate" hrefLang="he" href="https://www.alphabetush.com/he" />
+        <link rel="alternate" hrefLang="en" href="https://www.alphabetush.com/" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify({
@@ -32,7 +32,7 @@ export default function HeLanding() {
             "@type": "WebApplication",
             "name": "משחק האלפבית",
             "alternateName": "סטופ אונליין",
-            "url": "https://alphabetush.vercel.app/he",
+            "url": "https://www.alphabetush.com/he",
             "description": "מלא 7 קטגוריות במילים שמתחילות באותה אות תוך 60 שניות. ה-AI שופט את התשובות.",
             "applicationCategory": "GameApplication",
             "operatingSystem": "Web",
