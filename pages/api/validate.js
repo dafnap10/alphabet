@@ -293,10 +293,24 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
   const rules = CAT_RULES_EN[cat];
   if (!rules) return false;
 
+  const ids = instanceOfIds || [];
+
+  // For these categories, if the page is clearly a human/city/country — reject
+  const strictCats = ["Flower","Clothing","Instrument","Sport","Movie","Vegetable","Fruit","Car","Color","River","Language","Profession","Name"];
+  if (strictCats.includes(cat)) {
+    if (ids.includes(WRONG_TYPE_P31.human) && cat !== "Name") return false;
+    if (ids.includes(WRONG_TYPE_P31.city)) return false;
+    if (ids.includes(WRONG_TYPE_P31.country)) return false;
+    // Must match either P31 or category keywords — not just any page
+    const p31Match = ids.some(id => rules.p31AnyOf?.has(id));
+    const catMatch = keywordMatch(categories, rules.catKeywords);
+    return p31Match || catMatch;
+  }
+
   if (cat === "Food") {
-    const isTaxon = (instanceOfIds||[]).includes("Q16521");
+    const isTaxon = ids.includes("Q16521");
     const hasFoodCats = keywordMatch(categories, rules.catKeywords);
-    const p31DirectFood = (instanceOfIds||[]).some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
+    const p31DirectFood = ids.some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
     if (p31DirectFood) return true;
     if (FOOD_WHITELIST_EN.has(answerLower)) return hasFoodCats;
     if (isTaxon) return hasFoodCats;
@@ -304,7 +318,6 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
   }
 
   if (cat === "Object" && OBJECT_WHITELIST_EN.has(answerLower)) {
-    const ids = instanceOfIds || [];
     if (ids.includes(WRONG_TYPE_P31.human)) return false;
     if (ids.includes(WRONG_TYPE_P31.company) || ids.includes(WRONG_TYPE_P31.org)) return false;
     if (ids.includes(WRONG_TYPE_P31.city) || ids.includes(WRONG_TYPE_P31.country)) return false;
@@ -312,17 +325,17 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
   }
 
   if (cat === "Brand") {
-    if ((instanceOfIds||[]).includes(WRONG_TYPE_P31.human)) {
+    if (ids.includes(WRONG_TYPE_P31.human)) {
       if (!keywordMatch(categories, rules.catKeywords)) return false;
     }
   }
   if (cat === "Celebrity") {
-    const isHuman = (instanceOfIds||[]).includes(WRONG_TYPE_P31.human);
+    const isHuman = ids.includes(WRONG_TYPE_P31.human);
     if (!isHuman && !keywordMatch(categories, rules.catKeywords)) return false;
   }
 
-  if (instanceOfIds?.length) {
-    for (const id of instanceOfIds) { if (rules.p31AnyOf?.has(id)) return true; }
+  if (ids.length) {
+    for (const id of ids) { if (rules.p31AnyOf?.has(id)) return true; }
   }
   return keywordMatch(categories, rules.catKeywords);
 }
@@ -455,9 +468,9 @@ export default async function handler(req, res) {
     for (const cat of activeCats) {
       const answer = normAnswer(answers[cat] || "");
 
-      // Enforce minimum 2 characters (must be a real word, not just the letter)
-      if (answer.length < 2) {
-        result[cat] = { valid: false, reason: isHebrew ? "תשובה קצרה מדי" : "Answer too short" };
+      // Enforce minimum 3 characters (must be a real word, not just initials)
+      if (answer.length < 3) {
+        result[cat] = { valid: false, reason: isHebrew ? "תשובה קצרה מדי" : "Answer too short (min 3 letters)" };
         continue;
       }
 
