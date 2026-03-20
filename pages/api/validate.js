@@ -29,7 +29,7 @@ function normAnswer(s) {
 
 function startsWithLetter(answer, letter) {
   if (!answer || !letter) return false;
-  return answer.trim().startsWith(letter.trim());
+  return answer.trim().toLowerCase().startsWith(letter.trim().toLowerCase());
 }
 
 function isObviouslyGibberish(answer) {
