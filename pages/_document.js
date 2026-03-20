@@ -11,8 +11,8 @@ export default function Document() {
         <meta name="theme-color" content="#0a0a0f" />
 
         {/* Primary SEO */}
-        <meta name="description" content="Alphabet Game – Fill 7 categories with words starting with the same letter in 60 seconds. AI-judged. Play solo or challenge a friend online!" />
-        <meta name="keywords" content="alphabet game, word game, categories game, stop game, AI word game, online word game, משחק אלפבית, משחק מילים, סטופ, משחק קטגוריות" />
+        <meta name="description" content="Alphabet Game – משחק ארץ עיר אונליין עם שופט AI. מלא 7 קטגוריות במילים שמתחילות באותה אות תוך 60 שניות. Fill 7 categories with words starting with the same letter in 60 seconds. AI-judged. Free!" />
+        <meta name="keywords" content="alphabet game, word game, categories game, stop game, AI word game, online word game, scattergories online, scattergories free, categories game online, משחק אלפבית, משחק מילים, סטופ, משחק קטגוריות, משחק ארץ עיר, ארץ עיר אונליין, משחק ארץ עיר אונליין, סטופ אונליין, משחק סטופ, stop online, ארץ עיר AI, country city animal" />
         <meta name="author" content="Alphabetush" />
         <meta name="robots" content="index, follow" />
 
