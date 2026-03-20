@@ -1123,6 +1123,9 @@ export default function Home() {
             <div className="lbadge">{t.badge}</div>
             <div className="ltitle">ALPHABET<br/>GAME</div>
             <div className="lsub">{t.tagline}</div>
+            <div style={{color:"var(--mute)",fontSize:11,marginTop:6,letterSpacing:0.5}}>
+              {lang==="he" ? "משחק ארץ עיר · סטופ אונליין · שופט AI" : "Scattergories · Stop Game · AI Judge"}
+            </div>
           </div>
           <div className="menu">
             <button className="btn btn-p" onClick={()=>{ gaEvent("click_play_solo"); setScreen("solo-name"); }}><span className="bico">🎮</span> {t.playSolo}</button>
