@@ -165,7 +165,23 @@ async function resolveFromDisambiguation(answer, cat, lang) {
   return null;
 }
 
-// English category rules
+// All disambiguation suffixes across all categories — to detect wrong category results
+const ALL_DISAMBIGUATION_HINTS = new Set(
+  Object.values(DISAMBIGUATION_HINTS).flat().map(h => h.toLowerCase())
+);
+
+function isWrongCategoryDisambiguation(title, cat) {
+  // If title contains "(hint)" where hint belongs to a DIFFERENT category — reject
+  const match = title.match(/\(([^)]+)\)$/);
+  if (!match) return false;
+  const suffix = match[1].toLowerCase();
+  // Check if this suffix appears in hints for OTHER categories
+  for (const [c, hints] of Object.entries(DISAMBIGUATION_HINTS)) {
+    if (c === cat) continue;
+    if (hints.map(h => h.toLowerCase()).includes(suffix)) return true;
+  }
+  return false;
+}
 const CAT_RULES_EN = {
   Country: {
     p31AnyOf: new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554"]),
@@ -275,6 +291,7 @@ const CAT_RULES_HE = {
 const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229", company:"Q783794" };
 const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
 const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
+const FOOD_WHITELIST_HE   = new Set(["במבה","בורקס","בלינצס","ביסלי","בקלאווה","פלאפל","חומוס","שווארמה","קבב","סביח","לחמג'ון"]);
 
 const SEARCH_HINTS_EN = {
   Brand:      ["brand","company","inc","corporation"],
@@ -503,6 +520,7 @@ async function validateOneEN(cat, answerRaw, letter) {
       const p = await resolveWikipediaPage(t, "en");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
       if (!titleMatchesAnswer(p, answer)) continue;
+      if (isWrongCategoryDisambiguation(p.title, cat)) continue;
       let instanceOf = [];
       if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
       if (categoryMatchEN(cat, instanceOf, p.categories, answerLower)) {
@@ -555,6 +573,7 @@ async function validateOneHE(cat, answerRaw, letter) {
       const p = await resolveWikipediaPage(t, "he");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
       if (!titleMatchesAnswer(p, answer)) continue;
+      if (isWrongCategoryDisambiguation(p.title, cat)) continue;
       if (await categoryMatchHE(cat, p)) {
         return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
       }
@@ -605,4 +624,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-  }
+                              }
