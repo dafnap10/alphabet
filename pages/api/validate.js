@@ -540,6 +540,11 @@ async function validateOneHE(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `לא מתחיל ב-"${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "נראה כמו ג'יבריש" };
 
+  // Whitelist — known Hebrew foods that Wikipedia may misclassify
+  if (cat === "Food" && FOOD_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `מאכל מוכר (${answer})` };
+  }
+
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
@@ -619,9 +624,9 @@ export default async function handler(req, res) {
     const fallback = {};
     activeCats.forEach(c => {
       const v = normAnswer((answers||{})[c] || "");
-      const ok = v.length >= 2 && startsWithLetter(v, letter || "");
-      fallback[c] = { valid: ok, reason: ok ? "Valid (fallback)" : "Invalid (fallback)" };
+      // Fallback: reject all — don't give points when Wikipedia is unavailable
+      fallback[c] = { valid: false, reason: "Validation service temporarily unavailable" };
     });
     return res.status(200).json(fallback);
   }
-                              }
+               }
