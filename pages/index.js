@@ -417,6 +417,7 @@ export default function Home() {
   const [shareUrl,    setShareUrl]    = useState("");
   const [gameCats,    setGameCats]    = useState(CATS);
   const [speedBonus,  setSpeedBonus]  = useState(0);
+  const [timeMode,    setTimeMode]    = useState("timed"); // "timed" or "unlimited"
   const [cookieConsent, setCookieConsent] = useState(null); // null=unknown, true=accepted, false=declined
 
   const timerRef   = useRef(null);
@@ -615,14 +616,25 @@ export default function Home() {
 
   // ── Solo ──────────────────────────────────────────────────────────────────
   function startSolo() {
-    gaEvent("start_game", { label: playerName.trim() || "anonymous" });
+    gaEvent("start_game", { label: playerName.trim() || "anonymous", mode: timeMode });
     const l = pickLetter(langR.current);
     const cats = pickCats();
     setLetter(l); letterR.current = l;
     setGameCats(cats);
     setAnswers({}); answersR.current = {};
     setScreen("solo-game");
-    startTimer(() => doSubmit(l, null, false, cats));
+    if (timeMode === "unlimited") {
+      // No timer — just reset state
+      setTimeLeft(0);
+      setSubmitted(false);
+      setValidation(null);
+      setValidating(false);
+      setSpeedBonus(0);
+      submittedR.current = false;
+      timeLeftR.current = 0;
+    } else {
+      startTimer(() => doSubmit(l, null, false, cats));
+    }
   }
 
   // ── Random matchmaking ────────────────────────────────────────────────────
@@ -1148,6 +1160,21 @@ export default function Home() {
               onChange={e=>setPlayerName(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&playerName.trim()&&startSolo()} />
           </div>
+          <div>
+            <div className="flbl" style={{marginBottom:10}}>{lang==="he" ? "מצב משחק" : "GAME MODE"}</div>
+            <div className="mode-grid">
+              <div className={`mode-card${timeMode==="timed"?" active":""}`} onClick={()=>setTimeMode("timed")}>
+                <span className="mode-ico">⏱️</span>
+                <div className="mode-title">{lang==="he" ? "עם זמן" : "Timed"}</div>
+                <div className="mode-desc">{lang==="he" ? "60 שניות" : "60 seconds"}</div>
+              </div>
+              <div className={`mode-card${timeMode==="unlimited"?" active":""}`} onClick={()=>setTimeMode("unlimited")}>
+                <span className="mode-ico">♾️</span>
+                <div className="mode-title">{lang==="he" ? "ללא זמן" : "Unlimited"}</div>
+                <div className="mode-desc">{lang==="he" ? "בלי מגבלת זמן" : "No time limit"}</div>
+              </div>
+            </div>
+          </div>
           <button className="btn btn-p" onClick={startSolo} disabled={!playerName.trim()}>
             <span className="bico">🚀</span> {t.startGame}
           </button>
@@ -1345,8 +1372,16 @@ export default function Home() {
           <div className="lmain">{letter}</div>
           <div className="llbl">{t.currentLetter}</div>
         </div>
-        <div className="tbar-wrap"><div className="tbar" style={{width:`${pct}%`,background:tcol}}/></div>
-        <div className="tnum" style={{color:tcol}}>{String(timeLeft).padStart(2,"0")}</div>
+        {timeMode === "timed" ? (
+          <>
+            <div className="tbar-wrap"><div className="tbar" style={{width:`${pct}%`,background:tcol}}/></div>
+            <div className="tnum" style={{color:tcol}}>{String(timeLeft).padStart(2,"00")}</div>
+          </>
+        ) : (
+          <div style={{textAlign:"center",padding:"8px 0",color:"var(--mute)",fontSize:13,letterSpacing:2}}>
+            {lang==="he" ? "♾️ ללא הגבלת זמן" : "♾️ UNLIMITED"}
+          </div>
+        )}
         {validating ? (
           <div className="vwrap">
             <div className="spin"/>
