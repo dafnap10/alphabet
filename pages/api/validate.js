@@ -73,6 +73,8 @@ const CAT_NAMES_HE = {
   Car: "רכב", Color: "צבע", Flower: "פרח", Instrument: "כלי נגינה",
   Profession: "מקצוע", River: "נהר", Language: "שפה", Clothing: "ביגוד"
 };
+
+async function wikiFetch(params, lang = "en") {
   const base = lang === "he" ? WIKI_API_HE : WIKI_API_EN;
   const url = new URL(base);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
@@ -667,4 +669,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-                  }
+        }
