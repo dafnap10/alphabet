@@ -50,22 +50,64 @@ function isObviouslyGibberish(answer) {
   return false;
 }
 
+const FETCH_TIMEOUT_MS = 6000; // 6 seconds per request
+const MAX_RETRIES = 2;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return r;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+const CAT_NAMES_HE = {
+  Country: "מדינה", City: "עיר", Animal: "חיה", Food: "אוכל",
+  Celebrity: "מפורסם", Brand: "מותג", Object: "חפץ", Sport: "ספורט",
+  Movie: "סרט", Vegetable: "ירק", Fruit: "פרי", Name: "שם",
+  Car: "רכב", Color: "צבע", Flower: "פרח", Instrument: "כלי נגינה",
+  Profession: "מקצוע", River: "נהר", Language: "שפה", Clothing: "ביגוד"
+};
+
 async function wikiFetch(params, lang = "en") {
   const base = lang === "he" ? WIKI_API_HE : WIKI_API_EN;
   const url = new URL(base);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   url.searchParams.set("origin", "*");
-  const r = await fetch(url.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
-  if (!r.ok) throw new Error(`Wikipedia API error: ${r.status}`);
-  return r.json();
+  let lastErr;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const r = await fetchWithTimeout(url.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
+      if (!r.ok) throw new Error(`Wikipedia API error: ${r.status}`);
+      return r.json();
+    } catch (err) {
+      lastErr = err;
+      if (i < MAX_RETRIES - 1) await new Promise(res => setTimeout(res, 500));
+    }
+  }
+  throw lastErr;
 }
 
 async function wikidataFetch(params) {
   const url = new URL(WIKIDATA_API);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-  const r = await fetch(url.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
-  if (!r.ok) throw new Error(`Wikidata API error: ${r.status}`);
-  return r.json();
+  let lastErr;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const r = await fetchWithTimeout(url.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
+      if (!r.ok) throw new Error(`Wikidata API error: ${r.status}`);
+      return r.json();
+    } catch (err) {
+      lastErr = err;
+      if (i < MAX_RETRIES - 1) await new Promise(res => setTimeout(res, 500));
+    }
+  }
+  throw lastErr;
 }
 
 async function resolveWikipediaPage(title, lang = "en") {
@@ -540,11 +582,16 @@ async function validateOneHE(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `לא מתחיל ב-"${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "נראה כמו ג'יבריש" };
 
+  // Whitelist — known Hebrew foods that Wikipedia may misclassify
+  if (cat === "Food" && FOOD_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `מאכל מוכר (${answer})` };
+  }
+
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
     if (!titleMatchesAnswer(direct, answer)) {
-      return { valid: false, reason: `"${answer}" לא תקין לקטגוריה זו` };
+      return { valid: false, reason: `"${answer}" לא תואם לקטגוריה "${CAT_NAMES_HE[cat] || cat}"` };
     }
     if (await categoryMatchHE(cat, direct)) {
       return { valid: true, reason: `אומת בויקיפדיה (${direct.title})` };
@@ -581,7 +628,7 @@ async function validateOneHE(cat, answerRaw, letter) {
   }
 
   if (!direct.exists) return { valid: false, reason: "לא נמצא דף ויקיפדיה תואם" };
-  return { valid: false, reason: `"${direct.title}" לא תואם לקטגוריה "${cat}"` };
+  return { valid: false, reason: `"${direct.title}" לא תואם לקטגוריה "${CAT_NAMES_HE[cat] || cat}"` };
 }
 
 export default async function handler(req, res) {
@@ -618,10 +665,8 @@ export default async function handler(req, res) {
     const activeCats = Array.isArray(cats) && cats.length > 0 ? cats : CATS;
     const fallback = {};
     activeCats.forEach(c => {
-      const v = normAnswer((answers||{})[c] || "");
-      const ok = v.length >= 2 && startsWithLetter(v, letter || "");
-      fallback[c] = { valid: ok, reason: ok ? "Valid (fallback)" : "Invalid (fallback)" };
+      fallback[c] = { valid: false, reason: "timeout", timeout: true };
     });
     return res.status(200).json(fallback);
   }
-                              }
+        }

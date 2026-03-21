@@ -419,6 +419,7 @@ export default function Home() {
   const [speedBonus,  setSpeedBonus]  = useState(0);
   const [timeMode,    setTimeMode]    = useState("timed"); // "timed" or "unlimited"
   const [cookieConsent, setCookieConsent] = useState(null); // null=unknown, true=accepted, false=declined
+  const [serviceUnavailable, setServiceUnavailable] = useState(false);
 
   const timerRef   = useRef(null);
   const pollRef    = useRef(null);
@@ -580,6 +581,11 @@ export default function Home() {
 
     setValidation(result);
     setValidating(false);
+
+    // Check if validation service was unavailable
+    const isUnavailable = Object.values(result).some(v => v?.timeout === true || v?.reason === "timeout");
+    setServiceUnavailable(isUnavailable);
+    if (isUnavailable) return; // Don't show score screen yet
 
     // Speed bonus: only if ALL categories are correct
     const allCorrect = cats.every(c => result[c]?.valid);
@@ -1386,6 +1392,40 @@ export default function Home() {
           <div className="vwrap">
             <div className="spin"/>
             <div className="aibadge"><div className="aidot"/> {t.submitting}</div>
+          </div>
+        ) : serviceUnavailable ? (
+          <div style={{textAlign:"center",padding:"32px 16px",display:"flex",flexDirection:"column",gap:16,alignItems:"center"}}>
+            <div style={{fontSize:36}}>⚠️</div>
+            <div style={{color:"var(--txt)",fontSize:16,fontWeight:600}}>
+              {lang==="he" ? "שירות הולידציה לא זמין כרגע" : "Validation service unavailable"}
+            </div>
+            <div style={{color:"var(--mute)",fontSize:13}}>
+              {lang==="he" ? "נסה שוב עוד כמה שניות" : "Please try again in a few seconds"}
+            </div>
+            <button className="btn btn-p" style={{width:"100%"}} onClick={async () => {
+              setServiceUnavailable(false);
+              setValidating(true);
+              try {
+                const result = await apiPost("/api/validate", { answers: answersR.current, letter, lang: langR.current, cats: gameCats });
+                const isUnavailable = Object.values(result).some(v => v?.timeout === true || v?.reason === "timeout");
+                setServiceUnavailable(isUnavailable);
+                if (!isUnavailable) {
+                  setValidation(result);
+                  setValidating(false);
+                  setScreen("solo-score");
+                } else {
+                  setValidating(false);
+                }
+              } catch {
+                setValidating(false);
+                setServiceUnavailable(true);
+              }
+            }}>
+              {lang==="he" ? "🔄 נסה שוב" : "🔄 Try Again"}
+            </button>
+            <button className="btn btn-g" style={{width:"100%"}} onClick={goHome}>
+              {t.home}
+            </button>
           </div>
         ) : (
           <>
