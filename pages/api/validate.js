@@ -452,10 +452,6 @@ async function validateOneEN(cat, answerRaw, letter) {
       return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
     }
   }
-    if (!isDisambiguationTitle(direct.title) && categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
-      return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
-    }
-  }
 
   // Search fallback
   const hintWords = SEARCH_HINTS_EN[cat] || [];
