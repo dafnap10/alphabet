@@ -420,6 +420,14 @@ async function checkHebrewDictionary(word) {
 // Categories where dictionary check makes sense (common nouns, not proper nouns)
 const DICT_CHECK_CATS = new Set(["Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object"]);
 
+// Title must match the first word of the answer — prevents "תחתית פיצה" matching "תנור אפייה"
+function titleMatchesAnswer(title, answer) {
+  const titleLower = title.toLowerCase().trim();
+  const answerLower = answer.toLowerCase().trim();
+  const firstWord = answerLower.split(/\s+/)[0];
+  return titleLower.startsWith(firstWord);
+}
+
 async function validateOneEN(cat, answerRaw, letter) {
   const answer = normAnswer(answerRaw);
   const answerLower = answer.toLowerCase();
@@ -428,22 +436,10 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `Does not start with "${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "Looks like gibberish" };
 
-  // For common noun categories — check dictionary first (single words only)
-  if (DICT_CHECK_CATS.has(cat) && !answer.includes(" ")) {
-    const inDict = await checkEnglishDictionary(answerLower);
-    if (inDict) {
-      // Word exists in dictionary — still need to verify category via Wikipedia
-      // but we trust it's a real word, so do a targeted search
-    }
-    // If not in dictionary — still try Wikipedia (might be a proper name like "Chihuahua")
-  }
-
-  // Direct lookup — but verify the Wikipedia title also starts with the letter
-  // This prevents "free pizza" from matching the "Pizza" Wikipedia page
+  // Direct lookup — verify title starts with letter AND matches first word of answer
   const direct = await resolveWikipediaPage(answer, "en");
   if (direct.exists) {
-    // The Wikipedia title must start with the same letter as the answer
-    if (!direct.title.toLowerCase().startsWith(letter.toLowerCase())) {
+    if (!titleMatchesAnswer(direct.title, answer)) {
       return { valid: false, reason: `"${answer}" is not a valid ${cat} starting with "${letter}"` };
     }
     let instanceOf = [];
@@ -464,8 +460,7 @@ async function validateOneEN(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "en");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      // Title must start with same letter
-      if (!p.title.toLowerCase().startsWith(letter.toLowerCase())) continue;
+      if (!titleMatchesAnswer(p.title, answer)) continue;
       let instanceOf = [];
       if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
       if (categoryMatchEN(cat, instanceOf, p.categories, answerLower)) {
@@ -488,8 +483,7 @@ async function validateOneHE(cat, answerRaw, letter) {
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
-    // Verify Wikipedia title starts with same letter — prevents "סתם ורוד" matching "ורוד"
-    if (!direct.title.startsWith(letter)) {
+    if (!titleMatchesAnswer(direct.title, answer)) {
       return { valid: false, reason: `"${answer}" לא תקין לקטגוריה זו` };
     }
     if (await categoryMatchHE(cat, direct)) {
@@ -508,8 +502,7 @@ async function validateOneHE(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "he");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      // Title must start with same letter
-      if (!p.title.startsWith(letter)) continue;
+      if (!titleMatchesAnswer(p.title, answer)) continue;
       if (await categoryMatchHE(cat, p)) {
         return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
       }
@@ -560,4 +553,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-}
+               }
