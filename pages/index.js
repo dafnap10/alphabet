@@ -418,6 +418,7 @@ export default function Home() {
   const [gameCats,    setGameCats]    = useState(CATS);
   const [speedBonus,  setSpeedBonus]  = useState(0);
   const [timeMode,    setTimeMode]    = useState("timed"); // "timed" or "unlimited"
+  const [cookieConsent, setCookieConsent] = useState(null); // null=unknown, true=accepted, false=declined
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
 
   const timerRef   = useRef(null);
