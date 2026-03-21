@@ -464,6 +464,8 @@ async function validateOneEN(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "en");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
+      // Title must start with same letter
+      if (!p.title.toLowerCase().startsWith(letter.toLowerCase())) continue;
       let instanceOf = [];
       if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
       if (categoryMatchEN(cat, instanceOf, p.categories, answerLower)) {
@@ -483,38 +485,10 @@ async function validateOneHE(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `לא מתחיל ב-"${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "נראה כמו ג'יבריש" };
 
-  // For common noun categories — check Hebrew Wiktionary first
-  if (DICT_CHECK_CATS.has(cat) && !answer.includes(" ")) {
-    const inDict = await checkHebrewDictionary(answer);
-    if (inDict) {
-      // Word exists in Hebrew dictionary — do targeted Wikipedia search
-      const direct = await resolveWikipediaPage(answer, "he");
-      if (direct.exists && !isDisambiguationTitle(direct.title)) {
-        if (await categoryMatchHE(cat, direct)) {
-          return { valid: true, reason: `אומת במילון ובויקיפדיה (${direct.title})` };
-        }
-      }
-      // Dictionary confirms it's a real word — try search
-      const hintWords = SEARCH_HINTS_HE[cat] || [];
-      const queries = [answer, ...hintWords.slice(0,2).map(h => `${answer} ${h}`)];
-      for (const q of queries) {
-        const candidates = await wikipediaSearchTitles(q, "he", 5);
-        for (const t of candidates) {
-          const p = await resolveWikipediaPage(t, "he");
-          if (!p.exists || isDisambiguationTitle(p.title)) continue;
-          if (await categoryMatchHE(cat, p)) {
-            return { valid: true, reason: `אומת במילון ובויקיפדיה (${p.title})` };
-          }
-        }
-      }
-      return { valid: false, reason: `המילה קיימת אך לא תואמת לקטגוריה` };
-    }
-  }
-
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
-    // Verify Wikipedia title starts with same letter
+    // Verify Wikipedia title starts with same letter — prevents "סתם ורוד" matching "ורוד"
     if (!direct.title.startsWith(letter)) {
       return { valid: false, reason: `"${answer}" לא תקין לקטגוריה זו` };
     }
@@ -534,6 +508,8 @@ async function validateOneHE(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "he");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
+      // Title must start with same letter
+      if (!p.title.startsWith(letter)) continue;
       if (await categoryMatchHE(cat, p)) {
         return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
       }
