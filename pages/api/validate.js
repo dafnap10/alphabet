@@ -375,6 +375,51 @@ async function categoryMatchHE(cat, page) {
   return keywordMatch(page.categories, rules.catKeywords);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DICTIONARY APIs
+// ─────────────────────────────────────────────────────────────────────────────
+
+// English: Datamuse API — checks if word exists as a real English word/phrase
+async function checkEnglishDictionary(word) {
+  const key = `dict_en:${word.toLowerCase()}`;
+  const cached = cacheGet(key);
+  if (cached !== null) return cached;
+  try {
+    const url = `https://api.datamuse.com/words?sp=${encodeURIComponent(word)}&max=1&md=f`;
+    const r = await fetch(url, { headers: { "User-Agent": UA } });
+    if (!r.ok) { cacheSet(key, false); return false; }
+    const data = await r.json();
+    // Datamuse returns results if the word exists — exact match check
+    const exists = data.some(w => w.word.toLowerCase() === word.toLowerCase());
+    cacheSet(key, exists);
+    return exists;
+  } catch {
+    return false;
+  }
+}
+
+// Hebrew: Wiktionary API — checks if word exists in Hebrew Wiktionary
+async function checkHebrewDictionary(word) {
+  const key = `dict_he:${word}`;
+  const cached = cacheGet(key);
+  if (cached !== null) return cached;
+  try {
+    const url = `https://he.wiktionary.org/w/api.php?action=query&titles=${encodeURIComponent(word)}&format=json&origin=*`;
+    const r = await fetch(url, { headers: { "User-Agent": UA } });
+    if (!r.ok) { cacheSet(key, false); return false; }
+    const data = await r.json();
+    const pages = data?.query?.pages;
+    const exists = pages && !Object.values(pages).some(p => p.missing !== undefined);
+    cacheSet(key, !!exists);
+    return !!exists;
+  } catch {
+    return false;
+  }
+}
+
+// Categories where dictionary check makes sense (common nouns, not proper nouns)
+const DICT_CHECK_CATS = new Set(["Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object"]);
+
 async function validateOneEN(cat, answerRaw, letter) {
   const answer = normAnswer(answerRaw);
   const answerLower = answer.toLowerCase();
@@ -383,11 +428,30 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `Does not start with "${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "Looks like gibberish" };
 
-  // Direct lookup
+  // For common noun categories — check dictionary first (single words only)
+  if (DICT_CHECK_CATS.has(cat) && !answer.includes(" ")) {
+    const inDict = await checkEnglishDictionary(answerLower);
+    if (inDict) {
+      // Word exists in dictionary — still need to verify category via Wikipedia
+      // but we trust it's a real word, so do a targeted search
+    }
+    // If not in dictionary — still try Wikipedia (might be a proper name like "Chihuahua")
+  }
+
+  // Direct lookup — but verify the Wikipedia title also starts with the letter
+  // This prevents "free pizza" from matching the "Pizza" Wikipedia page
   const direct = await resolveWikipediaPage(answer, "en");
   if (direct.exists) {
+    // The Wikipedia title must start with the same letter as the answer
+    if (!direct.title.toLowerCase().startsWith(letter.toLowerCase())) {
+      return { valid: false, reason: `"${answer}" is not a valid ${cat} starting with "${letter}"` };
+    }
     let instanceOf = [];
     if (direct.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(direct.wikibaseItem); } catch {}
+    if (!isDisambiguationTitle(direct.title) && categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
+      return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
+    }
+  }
     if (!isDisambiguationTitle(direct.title) && categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
       return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
     }
@@ -423,9 +487,41 @@ async function validateOneHE(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `לא מתחיל ב-"${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "נראה כמו ג'יבריש" };
 
+  // For common noun categories — check Hebrew Wiktionary first
+  if (DICT_CHECK_CATS.has(cat) && !answer.includes(" ")) {
+    const inDict = await checkHebrewDictionary(answer);
+    if (inDict) {
+      // Word exists in Hebrew dictionary — do targeted Wikipedia search
+      const direct = await resolveWikipediaPage(answer, "he");
+      if (direct.exists && !isDisambiguationTitle(direct.title)) {
+        if (await categoryMatchHE(cat, direct)) {
+          return { valid: true, reason: `אומת במילון ובויקיפדיה (${direct.title})` };
+        }
+      }
+      // Dictionary confirms it's a real word — try search
+      const hintWords = SEARCH_HINTS_HE[cat] || [];
+      const queries = [answer, ...hintWords.slice(0,2).map(h => `${answer} ${h}`)];
+      for (const q of queries) {
+        const candidates = await wikipediaSearchTitles(q, "he", 5);
+        for (const t of candidates) {
+          const p = await resolveWikipediaPage(t, "he");
+          if (!p.exists || isDisambiguationTitle(p.title)) continue;
+          if (await categoryMatchHE(cat, p)) {
+            return { valid: true, reason: `אומת במילון ובויקיפדיה (${p.title})` };
+          }
+        }
+      }
+      return { valid: false, reason: `המילה קיימת אך לא תואמת לקטגוריה` };
+    }
+  }
+
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
+    // Verify Wikipedia title starts with same letter
+    if (!direct.title.startsWith(letter)) {
+      return { valid: false, reason: `"${answer}" לא תקין לקטגוריה זו` };
+    }
     if (await categoryMatchHE(cat, direct)) {
       return { valid: true, reason: `אומת בויקיפדיה (${direct.title})` };
     }
