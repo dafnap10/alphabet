@@ -87,6 +87,7 @@ async function resolveWikipediaPage(title, lang = "en") {
   const resolved = {
     exists: true,
     title: page.title,
+    originalTitle: title, // keep original search term for titleMatchesAnswer
     wikibaseItem: page.pageprops?.wikibase_item || null,
     categories: (page.categories || [])
       .map(c => (c.title || "").replace(/^(Category|קטגוריה):/, ""))
@@ -136,6 +137,34 @@ function isDisambiguationTitle(t) {
   return /\(disambiguation\)|\(פירושונים\)/i.test(t || "");
 }
 
+// Maps category to disambiguation suffixes to try
+const DISAMBIGUATION_HINTS = {
+  Name:       ["שם פרטי", "שם", "given name"],
+  Animal:     ["חיה", "בעל חיים", "species", "animal"],
+  Food:       ["מאכל", "אוכל", "food", "dish"],
+  Flower:     ["פרח", "צמח", "flower", "plant"],
+  River:      ["נהר", "river"],
+  City:       ["עיר", "city"],
+  Country:    ["מדינה", "country"],
+  Instrument: ["כלי נגינה", "instrument"],
+  Clothing:   ["בגד", "clothing"],
+  Color:      ["צבע", "color"],
+};
+
+async function resolveFromDisambiguation(answer, cat, lang) {
+  const hints = DISAMBIGUATION_HINTS[cat] || [];
+  if (!hints.length) return null;
+  // Try "answer (hint)" for each hint
+  for (const hint of hints) {
+    const candidate = `${answer} (${hint})`;
+    const page = await resolveWikipediaPage(candidate, lang);
+    if (page.exists && !isDisambiguationTitle(page.title)) {
+      return page;
+    }
+  }
+  return null;
+}
+
 // English category rules
 const CAT_RULES_EN = {
   Country: {
@@ -163,8 +192,8 @@ const CAT_RULES_EN = {
     catKeywords: ["brands","companies","products","trademarks","manufacturers","retailers","corporations","fashion houses","fashion brands","clothing brands","luxury brands","sportswear brands"],
   },
   Object: {
-    p31AnyOf: new Set(["Q223557","Q8205328","Q2424752","Q39546","Q1183543","Q11460"]),
-    catKeywords: ["objects","tools","devices","equipment","inventions","household","furniture","rooms","interior","architecture","building","construction","containers","storage","packaging","geology","rocks","minerals","musical notation","writing","stationery"],
+    p31AnyOf: new Set(["Q223557","Q8205328","Q2424752","Q39546","Q1183543","Q11460","Q14745","Q15026"]),
+    catKeywords: ["objects","tools","devices","equipment","inventions","household","furniture","rooms","interior","architecture","building","construction","containers","storage","packaging","geology","rocks","minerals","musical notation","writing","stationery","cabinets","shelving"],
   },
   Sport: {
     p31AnyOf: new Set(["Q349","Q2736","Q31629"]),
@@ -227,7 +256,7 @@ const CAT_RULES_HE = {
   Food:       { catKeywords: ["מזון","אוכל","מטבח","משקאות","ירקות","פירות","תזונה","מאכל","מנות","חטיפים"] },
   Celebrity:  { catKeywords: ["שחקנים","זמרים","מוזיקאים","ספורטאים","פוליטיקאים","סופרים","אנשים","ידוענים"] },
   Brand:      { catKeywords: ["מותגים","חברות","תאגידים","יצרנים","קמעונאים","מוצרים","סימני מסחר"] },
-  Object:     { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה"] },
+  Object:     { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","רהיט","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה","אחסון","ריהוט"] },
   Sport:      { catKeywords: ["ספורט","ענפי ספורט","משחקים","אתלטיקה","אולימפי","כדורגל","כדורסל"] },
   Movie:      { catKeywords: ["סרטים","סרט","קולנוע","אנימציה","קומדיה","דרמה","בימוי"] },
   Vegetable:  { catKeywords: ["ירקות","ירק","צמחים אכילים","גידולים","ירקות שורש","ירקות עלים"] },
@@ -421,11 +450,12 @@ async function checkHebrewDictionary(word) {
 const DICT_CHECK_CATS = new Set(["Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object"]);
 
 // Title must match the first word of the answer — prevents "תחתית פיצה" matching "תנור אפייה"
-function titleMatchesAnswer(title, answer) {
-  const titleLower = title.toLowerCase().trim();
+// Uses originalTitle (before redirect) so "ילקוט" → "תיק" still passes
+function titleMatchesAnswer(page, answer) {
+  const checkTitle = (page.originalTitle || page.title).toLowerCase().trim();
   const answerLower = answer.toLowerCase().trim();
   const firstWord = answerLower.split(/\s+/)[0];
-  return titleLower.startsWith(firstWord);
+  return checkTitle.startsWith(firstWord);
 }
 
 async function validateOneEN(cat, answerRaw, letter) {
@@ -438,14 +468,26 @@ async function validateOneEN(cat, answerRaw, letter) {
 
   // Direct lookup — verify title starts with letter AND matches first word of answer
   const direct = await resolveWikipediaPage(answer, "en");
-  if (direct.exists) {
-    if (!titleMatchesAnswer(direct.title, answer)) {
+  if (direct.exists && !isDisambiguationTitle(direct.title)) {
+    if (!titleMatchesAnswer(direct, answer)) {
       return { valid: false, reason: `"${answer}" is not a valid ${cat} starting with "${letter}"` };
     }
     let instanceOf = [];
     if (direct.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(direct.wikibaseItem); } catch {}
-    if (!isDisambiguationTitle(direct.title) && categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
+    if (categoryMatchEN(cat, instanceOf, direct.categories, answerLower)) {
       return { valid: true, reason: `Wikipedia-verified (${direct.title})` };
+    }
+  }
+
+  // If disambiguation — try specific meaning
+  if (direct.exists && isDisambiguationTitle(direct.title)) {
+    const specific = await resolveFromDisambiguation(answer, cat, "en");
+    if (specific && titleMatchesAnswer(specific, answer)) {
+      let instanceOf = [];
+      if (specific.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(specific.wikibaseItem); } catch {}
+      if (categoryMatchEN(cat, instanceOf, specific.categories, answerLower)) {
+        return { valid: true, reason: `Wikipedia-verified (${specific.title})` };
+      }
     }
   }
 
@@ -460,7 +502,7 @@ async function validateOneEN(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "en");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      if (!titleMatchesAnswer(p.title, answer)) continue;
+      if (!titleMatchesAnswer(p, answer)) continue;
       let instanceOf = [];
       if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
       if (categoryMatchEN(cat, instanceOf, p.categories, answerLower)) {
@@ -483,11 +525,21 @@ async function validateOneHE(cat, answerRaw, letter) {
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
-    if (!titleMatchesAnswer(direct.title, answer)) {
+    if (!titleMatchesAnswer(direct, answer)) {
       return { valid: false, reason: `"${answer}" לא תקין לקטגוריה זו` };
     }
     if (await categoryMatchHE(cat, direct)) {
       return { valid: true, reason: `אומת בויקיפדיה (${direct.title})` };
+    }
+  }
+
+  // 1b) If disambiguation — try specific meaning
+  if (direct.exists && isDisambiguationTitle(direct.title)) {
+    const specific = await resolveFromDisambiguation(answer, cat, "he");
+    if (specific && titleMatchesAnswer(specific, answer)) {
+      if (await categoryMatchHE(cat, specific)) {
+        return { valid: true, reason: `אומת בויקיפדיה (${specific.title})` };
+      }
     }
   }
 
@@ -502,7 +554,7 @@ async function validateOneHE(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "he");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      if (!titleMatchesAnswer(p.title, answer)) continue;
+      if (!titleMatchesAnswer(p, answer)) continue;
       if (await categoryMatchHE(cat, p)) {
         return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
       }
@@ -553,4 +605,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-               }
+  }
