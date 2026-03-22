@@ -397,7 +397,18 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
     return p31Match || catMatch;
   }
 
-  if (cat === "Food") {
+  // City: reject countries, regions, continents
+  if (cat === "City") {
+    const COUNTRY_IDS = new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554","Q82794","Q855697"]);
+    if (ids.some(id => COUNTRY_IDS.has(id))) return false;
+    if (keywordMatch(categories, ["countries","sovereign states","regions","territories","continents","מדינות","ארצות","יבשות","אזורים"])) return false;
+  }
+
+  // Country: reject cities
+  if (cat === "Country") {
+    if (ids.includes(WRONG_TYPE_P31.city)) return false;
+    if (keywordMatch(categories, ["cities","towns","municipalities","ערים","עיירות"])) return false;
+  }
     const isTaxon = ids.includes("Q16521");
     const hasFoodCats = keywordMatch(categories, rules.catKeywords);
     const p31DirectFood = ids.some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
@@ -446,6 +457,18 @@ async function categoryMatchHE(cat, page) {
 
   // Map English CAT_RULES P31 for Hebrew too
   const enRules = CAT_RULES_EN[cat];
+
+  // City: reject countries/regions using Wikidata
+  if (cat === "City") {
+    const COUNTRY_IDS = new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554","Q82794","Q855697"]);
+    if (instanceOf.some(id => COUNTRY_IDS.has(id))) return false;
+    if (keywordMatch(page.categories, ["מדינות","ארצות","יבשות","אזורים","regions","countries"])) return false;
+  }
+  // Country: reject cities
+  if (cat === "Country") {
+    if (instanceOf.includes(WRONG_TYPE_P31.city)) return false;
+    if (keywordMatch(page.categories, ["ערים","עיירות","cities","towns"])) return false;
+  }
   if (instanceOf.length && enRules?.p31AnyOf) {
     // Special handling same as English
     if (cat === "Celebrity") {
@@ -718,4 +741,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-    }
+                              }
