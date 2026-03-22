@@ -334,6 +334,8 @@ const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229",
 const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
 const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
 const FOOD_WHITELIST_HE   = new Set(["במבה","בורקס","בלינצס","ביסלי","בקלאווה","פלאפל","חומוס","שווארמה","קבב","סביח","לחמג'ון"]);
+const NAME_WHITELIST_EN   = new Set(["fani","farida","fahad","faisal","fatima","farah","felix","fiona","flora","frank","fred","freddy","frances","francesca","franco","franz","fadi","fares","fanny","fiona"]);
+const PROFESSION_WHITELIST_EN = new Set(["farman","fireman","fisherman","foreman","filmmaker","florist","forensicist","fundraiser","facilitator"]);
 
 const SEARCH_HINTS_EN = {
   Brand:      ["brand","company","inc","corporation"],
@@ -508,13 +510,36 @@ async function checkHebrewDictionary(word) {
 // Categories where dictionary check makes sense (common nouns, not proper nouns)
 const DICT_CHECK_CATS = new Set(["Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object"]);
 
-// Title must match the first word of the answer — prevents "תחתית פיצה" matching "תנור אפייה"
-// Uses originalTitle (before redirect) so "ילקוט" → "תיק" still passes
+// Title matching rules:
+// 1. Answer's first word must match title's first word
+// 2. Answer must not have MORE words than the title (prevents "עומר אדם המלך" matching "עומר אד")
+// 3. Uses originalTitle (before redirect) so "ילקוט" → "תיק" still passes
 function titleMatchesAnswer(page, answer) {
   const checkTitle = (page.originalTitle || page.title).toLowerCase().trim();
+  // Remove disambiguation suffix like "(שם פרטי)" from title for comparison
+  const cleanTitle = checkTitle.replace(/\s*\([^)]*\)\s*$/, "").trim();
   const answerLower = answer.toLowerCase().trim();
-  const firstWord = answerLower.split(/\s+/)[0];
-  return checkTitle.startsWith(firstWord);
+  const answerWords = answerLower.split(/\s+/);
+  const titleWords = cleanTitle.split(/\s+/);
+
+  // First word must match exactly
+  if (answerWords[0] !== titleWords[0]) return false;
+
+  // Answer must not have MORE words than title — "עומר אדם המלך" (3) won't match "עומר אדם" (2)
+  if (answerWords.length > titleWords.length) return false;
+
+  // Each answer word must match the corresponding title word (prefix ok for last word)
+  for (let i = 0; i < answerWords.length; i++) {
+    if (i < answerWords.length - 1) {
+      // All words except last must match exactly
+      if (answerWords[i] !== titleWords[i]) return false;
+    } else {
+      // Last word: title word must start with answer word
+      if (!titleWords[i]?.startsWith(answerWords[i])) return false;
+    }
+  }
+
+  return true;
 }
 
 async function validateOneEN(cat, answerRaw, letter) {
@@ -525,9 +550,25 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `Does not start with "${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "Looks like gibberish" };
 
+  // Whitelists for known valid answers Wikipedia may miss
+  if (cat === "Name" && NAME_WHITELIST_EN.has(answerLower)) {
+    return { valid: true, reason: `Known given name (${answer})` };
+  }
+  if (cat === "Profession" && PROFESSION_WHITELIST_EN.has(answerLower)) {
+    return { valid: true, reason: `Known profession (${answer})` };
+  }
+
   // Direct lookup — verify title starts with letter AND matches first word of answer
   const direct = await resolveWikipediaPage(answer, "en");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
+    // For Celebrity: if answer is one word but Wikipedia title has multiple words,
+    // only accept if the Wikipedia title itself is also one word (mononym like Beyoncé, Adele)
+    if (cat === "Celebrity" && answer.trim().split(/\s+/).length === 1) {
+      const titleWords = direct.title.trim().split(/\s+/);
+      if (titleWords.length > 1) {
+        return { valid: false, reason: `Please enter the full name (e.g. "${direct.title}")` };
+      }
+    }
     if (!titleMatchesAnswer(direct, answer)) {
       return { valid: false, reason: `"${answer}" is not a valid ${cat} starting with "${letter}"` };
     }
@@ -590,6 +631,14 @@ async function validateOneHE(cat, answerRaw, letter) {
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
+    // For Celebrity: if answer is one word but Wikipedia title has multiple words,
+    // only accept if the Wikipedia title itself is also one word (mononym)
+    if (cat === "Celebrity" && answer.trim().split(/\s+/).length === 1) {
+      const titleWords = direct.title.trim().split(/\s+/);
+      if (titleWords.length > 1) {
+        return { valid: false, reason: `נא להזין שם מלא (למשל "${direct.title}")` };
+      }
+    }
     if (!titleMatchesAnswer(direct, answer)) {
       return { valid: false, reason: `"${answer}" לא תואם לקטגוריה "${CAT_NAMES_HE[cat] || cat}"` };
     }
@@ -669,4 +718,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-        }
+    }
