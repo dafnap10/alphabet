@@ -263,7 +263,8 @@ const CAT_RULES_EN = {
   },
   Vegetable: {
     p31AnyOf: new Set(["Q11004","Q16521"]),
-    catKeywords: ["vegetables","vegetable","root vegetables","leaf vegetables","edible plants","crops"],
+    catKeywords: ["vegetables","vegetable","root vegetables","leaf vegetables","edible plants"],
+    rejectKeywords: ["cereals","grains","grain","cereal","staple food","rice","wheat","corn","legumes","pulses"],
   },
   Fruit: {
     p31AnyOf: new Set(["Q1364","Q16521"]),
@@ -317,7 +318,7 @@ const CAT_RULES_HE = {
   Object:     { catKeywords: ["כלים","מכשירים","ציוד","רהיטים","רהיט","חפצים","מיכלים","סלעים","מינרלים","אדריכלות","כלי נגינה","אחסון","ריהוט"] },
   Sport:      { catKeywords: ["ספורט","ענפי ספורט","משחקים","אתלטיקה","אולימפי","כדורגל","כדורסל"] },
   Movie:      { catKeywords: ["סרטים","סרט","קולנוע","אנימציה","קומדיה","דרמה","בימוי"] },
-  Vegetable:  { catKeywords: ["ירקות","ירק","צמחים אכילים","גידולים","ירקות שורש","ירקות עלים"] },
+  Vegetable:  { catKeywords: ["ירקות","ירק","צמחים אכילים","ירקות שורש","ירקות עלים"], rejectKeywords: ["דגנים","דגן","קטניות","אורז","חיטה","תירס","קמח"] },
   Fruit:      { catKeywords: ["פירות","פרי","פירות הדר","פירות טרופיים","פירות יער","גידולים"] },
   Name:       { catKeywords: ["שמות פרטיים","שמות","שם פרטי","שמות גבריים","שמות נשיים"] },
   Car:        { catKeywords: ["מכוניות","רכבים","אוטומובילים","דגמי רכב","תעשיית הרכב"] },
@@ -334,6 +335,8 @@ const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229",
 const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
 const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
 const FOOD_WHITELIST_HE   = new Set(["במבה","בורקס","בלינצס","ביסלי","בקלאווה","פלאפל","חומוס","שווארמה","קבב","סביח","לחמג'ון"]);
+const NAME_WHITELIST_EN   = new Set(["fani","farida","fahad","faisal","fatima","farah","felix","fiona","flora","frank","fred","freddy","frances","francesca","franco","franz","fadi","fares","fanny","fiona"]);
+const PROFESSION_WHITELIST_EN = new Set(["farman","fireman","fisherman","foreman","filmmaker","florist","forensicist","fundraiser","facilitator"]);
 
 const SEARCH_HINTS_EN = {
   Brand:      ["brand","company","inc","corporation"],
@@ -389,10 +392,25 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
     if (ids.includes(WRONG_TYPE_P31.human) && cat !== "Name") return false;
     if (ids.includes(WRONG_TYPE_P31.city)) return false;
     if (ids.includes(WRONG_TYPE_P31.country)) return false;
+    // Reject if matches rejectKeywords
+    if (rules.rejectKeywords && keywordMatch(categories, rules.rejectKeywords)) return false;
     // Must match either P31 or category keywords — not just any page
     const p31Match = ids.some(id => rules.p31AnyOf?.has(id));
     const catMatch = keywordMatch(categories, rules.catKeywords);
     return p31Match || catMatch;
+  }
+
+  // City: reject countries, regions, continents
+  if (cat === "City") {
+    const COUNTRY_IDS = new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554","Q82794","Q855697"]);
+    if (ids.some(id => COUNTRY_IDS.has(id))) return false;
+    if (keywordMatch(categories, ["countries","sovereign states","regions","territories","continents","מדינות","ארצות","יבשות","אזורים"])) return false;
+  }
+
+  // Country: reject cities
+  if (cat === "Country") {
+    if (ids.includes(WRONG_TYPE_P31.city)) return false;
+    if (keywordMatch(categories, ["cities","towns","municipalities","ערים","עיירות"])) return false;
   }
 
   if (cat === "Food") {
@@ -444,6 +462,18 @@ async function categoryMatchHE(cat, page) {
 
   // Map English CAT_RULES P31 for Hebrew too
   const enRules = CAT_RULES_EN[cat];
+
+  // City: reject countries/regions using Wikidata
+  if (cat === "City") {
+    const COUNTRY_IDS = new Set(["Q6256","Q3624078","Q7275","Q3024240","Q15634554","Q82794","Q855697"]);
+    if (instanceOf.some(id => COUNTRY_IDS.has(id))) return false;
+    if (keywordMatch(page.categories, ["מדינות","ארצות","יבשות","אזורים","regions","countries"])) return false;
+  }
+  // Country: reject cities
+  if (cat === "Country") {
+    if (instanceOf.includes(WRONG_TYPE_P31.city)) return false;
+    if (keywordMatch(page.categories, ["ערים","עיירות","cities","towns"])) return false;
+  }
   if (instanceOf.length && enRules?.p31AnyOf) {
     // Special handling same as English
     if (cat === "Celebrity") {
@@ -460,6 +490,7 @@ async function categoryMatchHE(cat, page) {
   }
 
   // Fall back to Hebrew category keywords
+  if (rules.rejectKeywords && keywordMatch(page.categories, rules.rejectKeywords)) return false;
   return keywordMatch(page.categories, rules.catKeywords);
 }
 
@@ -508,13 +539,45 @@ async function checkHebrewDictionary(word) {
 // Categories where dictionary check makes sense (common nouns, not proper nouns)
 const DICT_CHECK_CATS = new Set(["Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object"]);
 
-// Title must match the first word of the answer — prevents "תחתית פיצה" matching "תנור אפייה"
-// Uses originalTitle (before redirect) so "ילקוט" → "תיק" still passes
-function titleMatchesAnswer(page, answer) {
+// All categories require EXACT word count match
+const EXACT_MATCH_CATS = new Set([
+  "Movie","Celebrity","Brand","Sport","River","Language","Country","City","Car",
+  "Animal","Food","Vegetable","Fruit","Color","Flower","Instrument","Clothing","Object","Profession","Name"
+]);
+
+function titleMatchesAnswer(page, answer, cat) {
   const checkTitle = (page.originalTitle || page.title).toLowerCase().trim();
+  // Remove disambiguation suffix like "(שם פרטי)" from title for comparison
+  const cleanTitle = checkTitle.replace(/\s*\([^)]*\)\s*$/, "").trim();
   const answerLower = answer.toLowerCase().trim();
-  const firstWord = answerLower.split(/\s+/)[0];
-  return checkTitle.startsWith(firstWord);
+  const answerWords = answerLower.split(/\s+/);
+  const titleWords = cleanTitle.split(/\s+/);
+
+  // First word must match exactly
+  if (answerWords[0] !== titleWords[0]) return false;
+
+  // Answer must not have MORE words than title
+  if (answerWords.length > titleWords.length) return false;
+
+  // For exact match categories — answer must have SAME number of words as title
+  if (cat && EXACT_MATCH_CATS.has(cat) && answerWords.length !== titleWords.length) return false;
+
+  // Each answer word must match the corresponding title word (prefix ok for last word in non-exact cats)
+  for (let i = 0; i < answerWords.length; i++) {
+    if (i < answerWords.length - 1) {
+      if (answerWords[i] !== titleWords[i]) return false;
+    } else {
+      if (cat && EXACT_MATCH_CATS.has(cat)) {
+        // Exact match required for last word too
+        if (answerWords[i] !== titleWords[i]) return false;
+      } else {
+        // Prefix ok for last word
+        if (!titleWords[i]?.startsWith(answerWords[i])) return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 async function validateOneEN(cat, answerRaw, letter) {
@@ -525,10 +588,26 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (!startsWithLetter(answer, letter))  return { valid: false, reason: `Does not start with "${letter}"` };
   if (isObviouslyGibberish(answer))       return { valid: false, reason: "Looks like gibberish" };
 
+  // Whitelists for known valid answers Wikipedia may miss
+  if (cat === "Name" && NAME_WHITELIST_EN.has(answerLower)) {
+    return { valid: true, reason: `Known given name (${answer})` };
+  }
+  if (cat === "Profession" && PROFESSION_WHITELIST_EN.has(answerLower)) {
+    return { valid: true, reason: `Known profession (${answer})` };
+  }
+
   // Direct lookup — verify title starts with letter AND matches first word of answer
   const direct = await resolveWikipediaPage(answer, "en");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
-    if (!titleMatchesAnswer(direct, answer)) {
+    // For Celebrity: if answer is one word but Wikipedia title has multiple words,
+    // only accept if the Wikipedia title itself is also one word (mononym like Beyoncé, Adele)
+    if (cat === "Celebrity" && answer.trim().split(/\s+/).length === 1) {
+      const titleWords = direct.title.trim().split(/\s+/);
+      if (titleWords.length > 1) {
+        return { valid: false, reason: `Please enter the full name (e.g. "${direct.title}")` };
+      }
+    }
+    if (!titleMatchesAnswer(direct, answer, cat)) {
       return { valid: false, reason: `"${answer}" is not a valid ${cat} starting with "${letter}"` };
     }
     let instanceOf = [];
@@ -541,7 +620,7 @@ async function validateOneEN(cat, answerRaw, letter) {
   // If disambiguation — try specific meaning
   if (direct.exists && isDisambiguationTitle(direct.title)) {
     const specific = await resolveFromDisambiguation(answer, cat, "en");
-    if (specific && titleMatchesAnswer(specific, answer)) {
+    if (specific && titleMatchesAnswer(specific, answer, cat)) {
       let instanceOf = [];
       if (specific.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(specific.wikibaseItem); } catch {}
       if (categoryMatchEN(cat, instanceOf, specific.categories, answerLower)) {
@@ -561,7 +640,7 @@ async function validateOneEN(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "en");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      if (!titleMatchesAnswer(p, answer)) continue;
+      if (!titleMatchesAnswer(p, answer, cat)) continue;
       if (isWrongCategoryDisambiguation(p.title, cat)) continue;
       let instanceOf = [];
       if (p.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(p.wikibaseItem); } catch {}
@@ -590,7 +669,15 @@ async function validateOneHE(cat, answerRaw, letter) {
   // 1) Direct Hebrew Wikipedia lookup
   const direct = await resolveWikipediaPage(answer, "he");
   if (direct.exists && !isDisambiguationTitle(direct.title)) {
-    if (!titleMatchesAnswer(direct, answer)) {
+    // For Celebrity: if answer is one word but Wikipedia title has multiple words,
+    // only accept if the Wikipedia title itself is also one word (mononym)
+    if (cat === "Celebrity" && answer.trim().split(/\s+/).length === 1) {
+      const titleWords = direct.title.trim().split(/\s+/);
+      if (titleWords.length > 1) {
+        return { valid: false, reason: `נא להזין שם מלא (למשל "${direct.title}")` };
+      }
+    }
+    if (!titleMatchesAnswer(direct, answer, cat)) {
       return { valid: false, reason: `"${answer}" לא תואם לקטגוריה "${CAT_NAMES_HE[cat] || cat}"` };
     }
     if (await categoryMatchHE(cat, direct)) {
@@ -601,7 +688,7 @@ async function validateOneHE(cat, answerRaw, letter) {
   // 1b) If disambiguation — try specific meaning
   if (direct.exists && isDisambiguationTitle(direct.title)) {
     const specific = await resolveFromDisambiguation(answer, cat, "he");
-    if (specific && titleMatchesAnswer(specific, answer)) {
+    if (specific && titleMatchesAnswer(specific, answer, cat)) {
       if (await categoryMatchHE(cat, specific)) {
         return { valid: true, reason: `אומת בויקיפדיה (${specific.title})` };
       }
@@ -619,7 +706,7 @@ async function validateOneHE(cat, answerRaw, letter) {
     for (const t of candidates) {
       const p = await resolveWikipediaPage(t, "he");
       if (!p.exists || isDisambiguationTitle(p.title)) continue;
-      if (!titleMatchesAnswer(p, answer)) continue;
+      if (!titleMatchesAnswer(p, answer, cat)) continue;
       if (isWrongCategoryDisambiguation(p.title, cat)) continue;
       if (await categoryMatchHE(cat, p)) {
         return { valid: true, reason: `אומת בויקיפדיה (${p.title})` };
@@ -669,4 +756,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-        }
+      }
