@@ -412,6 +412,8 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
     if (ids.includes(WRONG_TYPE_P31.city)) return false;
     if (keywordMatch(categories, ["cities","towns","municipalities","ערים","עיירות"])) return false;
   }
+
+  if (cat === "Food") {
     const isTaxon = ids.includes("Q16521");
     const hasFoodCats = keywordMatch(categories, rules.catKeywords);
     const p31DirectFood = ids.some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
@@ -754,4 +756,4 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(fallback);
   }
-  }
+      }
