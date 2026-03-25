@@ -1022,6 +1022,10 @@ export default function Home() {
         <a href="/terms" style={{color:"#a0a0b8",fontSize:12,textDecoration:"none"}}>
           {isHe ? "תנאים" : "Terms"}
         </a>
+        <span style={{color:"#a0a0b8",fontSize:12}}>·</span>
+        <a href="mailto:info@alphabetush.com" style={{color:"#a0a0b8",fontSize:12,textDecoration:"none"}}>
+          {isHe ? "צור קשר" : "Contact Us"}
+        </a>
       </div>
     );
   }
