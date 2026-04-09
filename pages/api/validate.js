@@ -346,9 +346,64 @@ const CAT_RULES_HE = {
 const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229", company:"Q783794" };
 const OBJECT_WHITELIST_EN = new Set(["table","room","rock","note","crate"]);
 const FOOD_WHITELIST_EN   = new Set(["rambutan","apple","nuggets","chips"]);
-const FOOD_WHITELIST_HE   = new Set(["במבה","בורקס","בלינצס","ביסלי","בקלאווה","פלאפל","חומוס","שווארמה","קבב","סביח","לחמג'ון"]);
+const FOOD_WHITELIST_HE = new Set([
+  // חטיפים וממתקים
+  "במבה","בורקס","בלינצס","ביסלי","בקלאווה","פלאפל","חומוס","שווארמה","קבב","סביח","לחמג'ון",
+  // ירקות נפוצים
+  "כרוב","גזר","עגבניה","מלפפון","בצל","שום","תפוח אדמה","חציל","פלפל","קישוא","סלרי",
+  "ברוקולי","כרובית","תרד","חסה","אספרגוס","ארטישוק","לפת","צנון","סלק","שעועית",
+  "אפונה","תירס","דלעת","בטטה","פטריה","כרישה","שמיר","פטרוזיליה","כוסברה","נענע",
+  // פירות נפוצים
+  "תפוח","תפוז","בננה","ענב","אבטיח","מלון","תות","אשכולית","לימון","רימון",
+  "אגס","שזיף","משמש","אפרסק","מנגו","אננס","קיווי","תמר","תאנה","זית",
+  // דגנים וקטניות
+  "אורז","חיטה","שעורה","עדשים","חומוס","סויה","שיבולת שועל",
+  // מוצרי חלב ובשר
+  "גבינה","יוגורט","חלב","ביצה","עוף","בשר","דג","טונה","סלמון",
+]);
 const NAME_WHITELIST_EN   = new Set(["fani","farida","fahad","faisal","fatima","farah","felix","fiona","flora","frank","fred","freddy","frances","francesca","franco","franz","fadi","fares","fanny","fiona"]);
-const PROFESSION_WHITELIST_EN = new Set(["farman","fireman","fisherman","foreman","filmmaker","florist","forensicist","fundraiser","facilitator"]);
+const PROFESSION_WHITELIST_EN = new Set([
+  "farman","fireman","fisherman","foreman","filmmaker","florist","forensicist","fundraiser","facilitator",
+  "jail officer","jailer","janitor","journalist","judge","jurist","jeweler"
+]);
+
+const CAR_WHITELIST_HE = new Set([
+  "פיאט","פורד","פרארי","פולקסווגן","פורשה","פיג'ו",
+  "הונדה","יונדאי","המר",
+  "טויוטה","טסלה",
+  "בי אם וי","בנטלי","בואיק","בוגאטי",
+  "שברולט","סיטרואן","קאדילק",
+  "דאצ'יה","דודג'",
+  "קיה","קוניגסג",
+  "למבורגיני","לקסוס","לוטוס",
+  "מזדה","מרצדס","מיצובישי","מזראטי","מיני",
+  "ניסאן","אופל",
+  "רנו","רולס רויס",
+  "סיאט","סובארו","סוזוקי","סאאב","סקודה",
+  "וולוו","אאודי","אלפא רומיאו","אסטון מרטין",
+  "ג'יפ","ג'גואר"
+]);
+
+// Car brands that Wikipedia may not recognize directly as cars
+const CAR_BRAND_WHITELIST = new Set([
+  "jaguar","jeep","jensen","jac",
+  "fiat","ford","ferrari","fisker",
+  "honda","hyundai","hummer",
+  "toyota","tesla","triumph",
+  "bmw","bentley","bugatti","buick",
+  "chevrolet","chrysler","citroen","cadillac",
+  "dodge","dacia","daewoo",
+  "kia","koenigsegg",
+  "lamborghini","lexus","lincoln","lotus",
+  "mazda","mercedes","mitsubishi","maserati","mini",
+  "nissan",
+  "opel",
+  "peugeot","porsche",
+  "renault","rolls royce",
+  "seat","subaru","suzuki","saab","skoda",
+  "volkswagen","volvo",
+  "alfa romeo","aston martin","audi"
+]);
 
 const SEARCH_HINTS_EN = {
   Brand:      ["brand","company","inc","corporation"],
@@ -635,6 +690,15 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (cat === "Profession" && PROFESSION_WHITELIST_EN.has(answerLower)) {
     return { valid: true, reason: `Known profession (${answer})` };
   }
+  if (cat === "Car" && CAR_BRAND_WHITELIST.has(answerLower)) {
+    return { valid: true, reason: `Known car brand (${answer})` };
+  }
+
+  // Some countries Wikipedia title may differ slightly
+  const COUNTRY_WHITELIST = new Set(["jordan","japan","jamaica","jersey"]);
+  if (cat === "Country" && COUNTRY_WHITELIST.has(answerLower)) {
+    return { valid: true, reason: `Known country (${answer})` };
+  }
 
   // Direct lookup — verify title starts with letter AND matches first word of answer
   const direct = await resolveWikipediaPage(answer, "en");
@@ -704,6 +768,9 @@ async function validateOneHE(cat, answerRaw, letter) {
   // Whitelist — known Hebrew foods that Wikipedia may misclassify
   if (cat === "Food" && FOOD_WHITELIST_HE.has(answer)) {
     return { valid: true, reason: `מאכל מוכר (${answer})` };
+  }
+  if (cat === "Car" && CAR_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `מותג רכב מוכר (${answer})` };
   }
 
   // 1) Direct Hebrew Wikipedia lookup
