@@ -164,10 +164,19 @@ async function getWikidataInstanceOf(qid) {
     action: "wbgetentities", format: "json", ids: qid, props: "claims",
   });
   const ent = data?.entities?.[qid];
+
+  // P31 = instance of
   const p31 = ent?.claims?.P31 || [];
   const instanceOf = p31.map(snak => snak?.mainsnak?.datavalue?.value?.id).filter(Boolean);
-  cacheSet(key, instanceOf);
-  return instanceOf;
+
+  // P366 = has use (e.g. food, vegetable) — important for taxons like כרוב
+  const p366 = ent?.claims?.P366 || [];
+  const hasUse = p366.map(snak => snak?.mainsnak?.datavalue?.value?.id).filter(Boolean);
+
+  // Combine — treat "has use: food/vegetable" as equivalent to "instance of food"
+  const combined = [...new Set([...instanceOf, ...hasUse])];
+  cacheSet(key, combined);
+  return combined;
 }
 
 function keywordMatch(categories, keywords) {
@@ -238,7 +247,10 @@ const CAT_RULES_EN = {
     catKeywords: ["animals","fauna","species","genera","mammals","birds","fish","reptiles","amphibians","insects"],
   },
   Food: {
-    p31AnyOf: new Set(["Q2095","Q746549","Q13233","Q19861951","Q11004","Q1364","Q12140","Q8502","Q16521"]),
+    p31AnyOf: new Set(["Q2095","Q746549","Q13233","Q19861951","Q11004","Q1364","Q12140","Q8502","Q16521",
+      "Q25403900", // vegetable (P366 has use)
+      "Q1179171",  // food ingredient
+    ]),
     catKeywords: ["foods","food","dishes","cuisine","beverages","drinks","desserts","recipes","edible","vegetables","fruits","crops","plants used as food","culinary","snack foods","fast food"],
   },
   Celebrity: {
@@ -417,16 +429,31 @@ function categoryMatchEN(cat, instanceOfIds, categories, answerLower) {
     const isTaxon = ids.includes("Q16521");
     const hasFoodCats = keywordMatch(categories, rules.catKeywords);
     const p31DirectFood = ids.some(id => id !== "Q16521" && rules.p31AnyOf.has(id));
+    // P366 "has use: food" (Q2095) or "has use: vegetable" — from combined P31+P366
+    const hasUseFood = ids.includes("Q2095") || ids.includes("Q11004") || ids.includes("Q1364");
     if (p31DirectFood) return true;
+    if (hasUseFood) return true; // כרוב: taxon with has use = food ✓
     if (FOOD_WHITELIST_EN.has(answerLower)) return hasFoodCats;
     if (isTaxon) return hasFoodCats;
     return hasFoodCats;
   }
 
-  if (cat === "Object" && OBJECT_WHITELIST_EN.has(answerLower)) {
-    if (ids.includes(WRONG_TYPE_P31.human)) return false;
-    if (ids.includes(WRONG_TYPE_P31.company) || ids.includes(WRONG_TYPE_P31.org)) return false;
-    if (ids.includes(WRONG_TYPE_P31.city) || ids.includes(WRONG_TYPE_P31.country)) return false;
+  if (cat === "Object") {
+    // Object = any inanimate thing — reject people, places, animals, plants, abstract concepts
+    const REJECT_FOR_OBJECT = new Set([
+      "Q5",      // human
+      "Q515","Q3957","Q1549591", // city
+      "Q6256","Q3624078","Q7275", // country
+      "Q16521",  // taxon (animal/plant) — unless has use = food tool etc
+      "Q7432",   // species
+    ]);
+    if (ids.some(id => REJECT_FOR_OBJECT.has(id))) {
+      // Allow taxon only if it's a tool/material (e.g. bamboo used as object)
+      if (ids.includes("Q16521") && !keywordMatch(categories, ["tools","material","wood","stone","mineral"])) return false;
+      if (!ids.includes("Q16521")) return false;
+    }
+    if (keywordMatch(categories, ["people","politicians","actors","singers","athletes","cities","countries","animals","birds","fish","mammals"])) return false;
+    // Accept if Wikipedia page exists and is not a person/place/animal
     return true;
   }
 
@@ -474,6 +501,15 @@ async function categoryMatchHE(cat, page) {
     if (instanceOf.includes(WRONG_TYPE_P31.city)) return false;
     if (keywordMatch(page.categories, ["ערים","עיירות","cities","towns"])) return false;
   }
+  // Object: accept any inanimate thing — reject people/places/animals
+  if (cat === "Object") {
+    const REJECT_FOR_OBJECT = new Set(["Q5","Q515","Q3957","Q6256","Q3624078","Q7275","Q7432"]);
+    if (instanceOf.some(id => REJECT_FOR_OBJECT.has(id))) return false;
+    if (instanceOf.includes("Q16521") && !keywordMatch(page.categories, ["כלים","חומר","עץ","אבן","מינרל"])) return false;
+    if (keywordMatch(page.categories, ["אנשים","פוליטיקאים","שחקנים","זמרים","ספורטאים","ערים","מדינות","בעלי חיים","עופות","דגים"])) return false;
+    return page.exists;
+  }
+
   if (instanceOf.length && enRules?.p31AnyOf) {
     // Special handling same as English
     if (cat === "Celebrity") {
@@ -483,6 +519,10 @@ async function categoryMatchHE(cat, page) {
       if (instanceOf.includes(WRONG_TYPE_P31.human)) {
         return keywordMatch(page.categories, rules.catKeywords);
       }
+    }
+    // Food: accept if P366 has use = food/vegetable/fruit
+    if (cat === "Food") {
+      if (instanceOf.includes("Q2095") || instanceOf.includes("Q11004") || instanceOf.includes("Q1364")) return true;
     }
     for (const id of instanceOf) {
       if (enRules.p31AnyOf.has(id)) return true;
