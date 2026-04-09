@@ -367,21 +367,48 @@ const PROFESSION_WHITELIST_EN = new Set([
   "jail officer","jailer","janitor","journalist","judge","jurist","jeweler"
 ]);
 
+const VEGETABLE_WHITELIST_HE = new Set([
+  "כרוב","גזר","עגבניה","מלפפון","בצל","שום","תפוח אדמה","חציל","פלפל","קישוא","סלרי",
+  "ברוקולי","כרובית","תרד","חסה","אספרגוס","ארטישוק","לפת","צנון","סלק","שעועית",
+  "אפונה","תירס","דלעת","בטטה","פטריה","כרישה","שמיר","פטרוזיליה","כוסברה","נענע",
+  "חומוס","עדשים","שעועית ירוקה","כרוב ניצנים","סלק אדום"
+]);
+
+const NAME_WHITELIST_HE = new Set([
+  "סיון","סיגל","סיגלית","סמדר","שרית","שירה","שקד","שחר","שי","שירן",
+  "נועה","נעמה","נוי","נטע","נגה","נמרוד",
+  "אביב","אביגיל","אביתר","אדם","אהרון","אורי","אורית","אילן","אילנה",
+  "ליאור","לירון","לירי","לי","לבנה",
+  "מיכל","מיכאל","מור","מיה","מעיין",
+  "יעל","יונה","יובל","יפה","יניב",
+  "תמר","תהילה","תום",
+  "רון","רוני","רחל","רבקה","ראם",
+  "קרן","קורל","קמיל",
+  "דנה","דן","דביר","דורון","דפנה",
+  "גלי","גל","גיא","גבריאל",
+  "עמית","עדי","עינב","עומר",
+  "פז","פנינה","פיליפ",
+  "זיו","זוהר","זהבה",
+  "חן","חנה","חגית","חיים",
+  "טל","טלי","טובה","טניה"
+]);
+
 const CAR_WHITELIST_HE = new Set([
   "פיאט","פורד","פרארי","פולקסווגן","פורשה","פיג'ו",
   "הונדה","יונדאי","המר",
   "טויוטה","טסלה",
   "בי אם וי","בנטלי","בואיק","בוגאטי",
   "שברולט","סיטרואן","קאדילק",
-  "דאצ'יה","דודג'",
+  "דאצ'יה","דודג'","דיהטסו",
   "קיה","קוניגסג",
-  "למבורגיני","לקסוס","לוטוס",
+  "למבורגיני","לקסוס","לוטוס","לינקולן",
   "מזדה","מרצדס","מיצובישי","מזראטי","מיני",
   "ניסאן","אופל",
   "רנו","רולס רויס",
   "סיאט","סובארו","סוזוקי","סאאב","סקודה",
   "וולוו","אאודי","אלפא רומיאו","אסטון מרטין",
-  "ג'יפ","ג'גואר"
+  "ג'יפ","ג'גואר","ג'נסיס",
+  "ביואיק","קרייזלר","שברולט"
 ]);
 
 // Car brands that Wikipedia may not recognize directly as cars
@@ -687,6 +714,24 @@ async function validateOneEN(cat, answerRaw, letter) {
   if (cat === "Name" && NAME_WHITELIST_EN.has(answerLower)) {
     return { valid: true, reason: `Known given name (${answer})` };
   }
+
+  // For Name category — try "(given name)" disambiguation FIRST
+  if (cat === "Name") {
+    const nameSpecific = await resolveWikipediaPage(`${answer} (given name)`, "en");
+    if (nameSpecific.exists && !isDisambiguationTitle(nameSpecific.title)) {
+      return { valid: true, reason: `Wikipedia-verified (${nameSpecific.title})` };
+    }
+    // Also try Wikidata P31 check directly
+    const nameDirect = await resolveWikipediaPage(answer, "en");
+    if (nameDirect.exists && nameDirect.wikibaseItem) {
+      let instanceOf = [];
+      try { instanceOf = await getWikidataInstanceOf(nameDirect.wikibaseItem); } catch {}
+      const NAME_P31 = new Set(["Q202444","Q11879590","Q3409032","Q4116295"]);
+      if (instanceOf.some(id => NAME_P31.has(id))) {
+        return { valid: true, reason: `Wikipedia-verified (${nameDirect.title})` };
+      }
+    }
+  }
   if (cat === "Profession" && PROFESSION_WHITELIST_EN.has(answerLower)) {
     return { valid: true, reason: `Known profession (${answer})` };
   }
@@ -769,8 +814,32 @@ async function validateOneHE(cat, answerRaw, letter) {
   if (cat === "Food" && FOOD_WHITELIST_HE.has(answer)) {
     return { valid: true, reason: `מאכל מוכר (${answer})` };
   }
+  if (cat === "Vegetable" && VEGETABLE_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `ירק מוכר (${answer})` };
+  }
   if (cat === "Car" && CAR_WHITELIST_HE.has(answer)) {
     return { valid: true, reason: `מותג רכב מוכר (${answer})` };
+  }
+  if (cat === "Name" && NAME_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `שם פרטי מוכר (${answer})` };
+  }
+
+  // For Name category — try "(שם פרטי)" disambiguation FIRST
+  if (cat === "Name") {
+    const nameSpecific = await resolveWikipediaPage(`${answer} (שם פרטי)`, "he");
+    if (nameSpecific.exists && !isDisambiguationTitle(nameSpecific.title)) {
+      return { valid: true, reason: `אומת בויקיפדיה (${nameSpecific.title})` };
+    }
+    // Also try English Wikidata — names are language-agnostic
+    const nameEn = await resolveWikipediaPage(answer, "en");
+    if (nameEn.exists && !isDisambiguationTitle(nameEn.title)) {
+      let instanceOf = [];
+      if (nameEn.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(nameEn.wikibaseItem); } catch {}
+      const NAME_P31 = new Set(["Q202444","Q11879590","Q3409032","Q4116295"]);
+      if (instanceOf.some(id => NAME_P31.has(id))) {
+        return { valid: true, reason: `שם פרטי אומת (${answer})` };
+      }
+    }
   }
 
   // 1) Direct Hebrew Wikipedia lookup
