@@ -961,7 +961,8 @@ export default function Home() {
 
   // ── Enter → next input ────────────────────────────────────────────────────
   function handleCatKeyDown(e, idx) {
-    if (e.key === "Enter" || e.key === "Go") {
+    // Android "Go" key sends Enter or Process
+    if (e.key === "Enter" || e.key === "Go" || e.keyCode === 13) {
       e.preventDefault();
       const next = inputRefs.current[idx+1];
       if (next) {
@@ -971,6 +972,16 @@ export default function Home() {
         if (!submittedR.current) {
           doSubmit(letterR.current, roomR.current || null);
         }
+      }
+    }
+  }
+
+  function handleCatKeyUp(e, idx) {
+    // Fallback for Android keyboards that fire keyup but not keydown for Go
+    if (e.key === "Enter" || e.keyCode === 13) {
+      const next = inputRefs.current[idx+1];
+      if (!next && !submittedR.current) {
+        doSubmit(letterR.current, roomR.current || null);
       }
     }
   }
@@ -1121,6 +1132,7 @@ export default function Home() {
                 value={val}
                 onChange={e=>setAns(cat,e.target.value)}
                 onKeyDown={e=>handleCatKeyDown(e,idx)}
+                onKeyUp={e=>handleCatKeyUp(e,idx)}
                 disabled={disabled}
                 autoComplete="off"
                 enterKeyHint={idx === gameCats.length - 1 ? "go" : "next"}
