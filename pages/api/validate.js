@@ -670,7 +670,9 @@ const EXACT_MATCH_CATS = new Set([
 function titleMatchesAnswer(page, answer, cat) {
   const checkTitle = (page.originalTitle || page.title).toLowerCase().trim();
   // Remove disambiguation suffix like "(שם פרטי)" from title for comparison
-  const cleanTitle = checkTitle.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  // Also remove "language" suffix for Language category
+  let cleanTitle = checkTitle.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (cat === "Language") cleanTitle = cleanTitle.replace(/\s+language$/, "").trim();
   const answerLower = answer.toLowerCase().trim();
   const answerWords = answerLower.split(/\s+/);
   const titleWords = cleanTitle.split(/\s+/);
@@ -743,6 +745,18 @@ async function validateOneEN(cat, answerRaw, letter) {
   const COUNTRY_WHITELIST = new Set(["jordan","japan","jamaica","jersey"]);
   if (cat === "Country" && COUNTRY_WHITELIST.has(answerLower)) {
     return { valid: true, reason: `Known country (${answer})` };
+  }
+
+  // For Language — try "X language" first to avoid ethnic group pages
+  if (cat === "Language" && !answer.toLowerCase().includes("language")) {
+    const langPage = await resolveWikipediaPage(`${answer} language`, "en");
+    if (langPage.exists && !isDisambiguationTitle(langPage.title) && titleMatchesAnswer(langPage, answer, cat)) {
+      let instanceOf = [];
+      if (langPage.wikibaseItem) try { instanceOf = await getWikidataInstanceOf(langPage.wikibaseItem); } catch {}
+      if (categoryMatchEN(cat, instanceOf, langPage.categories, answerLower)) {
+        return { valid: true, reason: `Wikipedia-verified (${langPage.title})` };
+      }
+    }
   }
 
   // Direct lookup — verify title starts with letter AND matches first word of answer
