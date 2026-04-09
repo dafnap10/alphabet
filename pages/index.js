@@ -961,10 +961,17 @@ export default function Home() {
 
   // ── Enter → next input ────────────────────────────────────────────────────
   function handleCatKeyDown(e, idx) {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" || e.key === "Go") {
       e.preventDefault();
       const next = inputRefs.current[idx+1];
-      if (next) next.focus();
+      if (next) {
+        next.focus();
+      } else {
+        // Last category — submit answers
+        if (!submittedR.current) {
+          doSubmit(letterR.current, roomR.current || null);
+        }
+      }
     }
   }
 
@@ -1116,6 +1123,7 @@ export default function Home() {
                 onKeyDown={e=>handleCatKeyDown(e,idx)}
                 disabled={disabled}
                 autoComplete="off"
+                enterKeyHint={idx === gameCats.length - 1 ? "go" : "next"}
                 ref={el=>{inputRefs.current[idx]=el;}}
               />
               <span className="cx">{bad?"❌":""}</span>
