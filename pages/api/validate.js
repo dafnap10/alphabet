@@ -340,7 +340,7 @@ const CAT_RULES_HE = {
   Profession: { catKeywords: ["מקצועות","מקצוע","עיסוקים","קריירה","עבודה","תפקידים"] },
   River:      { catKeywords: ["נהרות","נהר","זרמים","מים","גאוגרפיה","אגן ניקוז"] },
   Language:   { catKeywords: ["שפות","שפה","ניבים","לשון","שפות טבעיות","משפחות לשון"] },
-  Clothing:   { catKeywords: ["ביגוד","בגדים","אופנה","לבוש","הלבשה","נעליים","אקססוריז"] },
+  Clothing:   { catKeywords: ["ביגוד","בגדים","אופנה","לבוש","הלבשה","נעליים","אקססוריז","פריט לבוש"] },
 };
 
 const WRONG_TYPE_P31 = { human:"Q5", city:"Q515", country:"Q6256", org:"Q43229", company:"Q783794" };
@@ -391,6 +391,15 @@ const NAME_WHITELIST_HE = new Set([
   "זיו","זוהר","זהבה",
   "חן","חנה","חגית","חיים",
   "טל","טלי","טובה","טניה"
+]);
+
+const CLOTHING_WHITELIST_HE = new Set([
+  "חולצה","מכנסיים","שמלה","חצאית","מעיל","ז'קט","סוודר","גופייה","תחתונים",
+  "גרביים","גרב","נעליים","נעל","מגפיים","מגף","כובע","צעיף","כפפות","כפפה",
+  "חגורה","עניבה","חליפה","פיג'מה","גלימה","אפוד","חלוק","בגד ים","ביקיני",
+  "טייץ","ג'ינס","חולצת טי","מכנס קצר","שורט","סנדלים","סנדל","כפכפים","כפכף",
+  "נעלי בית","גלביה","קפוצ'ון","סריג","טוניקה","בלייזר","ברדס","מטפחת","עניבת פרפר",
+  "טלית","סינר","גרביון","אדרת","כתונת","פרוה","רדיד","תחפושת"
 ]);
 
 const CAR_WHITELIST_HE = new Set([
@@ -830,6 +839,9 @@ async function validateOneHE(cat, answerRaw, letter) {
   }
   if (cat === "Vegetable" && VEGETABLE_WHITELIST_HE.has(answer)) {
     return { valid: true, reason: `ירק מוכר (${answer})` };
+  }
+  if (cat === "Clothing" && CLOTHING_WHITELIST_HE.has(answer)) {
+    return { valid: true, reason: `פריט ביגוד מוכר (${answer})` };
   }
   if (cat === "Car" && CAR_WHITELIST_HE.has(answer)) {
     return { valid: true, reason: `מותג רכב מוכר (${answer})` };
