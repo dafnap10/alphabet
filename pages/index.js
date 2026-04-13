@@ -1455,7 +1455,7 @@ export default function Home() {
           <>
             {catRows(submitted)}
             {!submitted && (
-              <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
+              <button type="button" tabIndex={-1} className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
                 onClick={()=>doSubmit(letter,null)}>{t.submitAnswers}</button>
             )}
           </>
@@ -1541,7 +1541,7 @@ export default function Home() {
         ) : (
           <>
             {catRows(false)}
-            <button className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
+            <button type="button" tabIndex={-1} className="btn btn-p" style={{width:"100%",marginTop:8,marginBottom:24}}
               onClick={()=>doSubmit(letterR.current,roomR.current)}>{t.submitAnswers}</button>
           </>
         )}
