@@ -970,7 +970,9 @@ export default function Home() {
       } else {
         // Last category — submit answers
         if (!submittedR.current) {
-          doSubmit(letterR.current, roomR.current || null);
+          const l = letterR.current;
+          const room = roomR.current || null;
+          doSubmit(l, room);
         }
       }
     }
@@ -981,7 +983,9 @@ export default function Home() {
     if (e.key === "Enter" || e.keyCode === 13) {
       const next = inputRefs.current[idx+1];
       if (!next && !submittedR.current) {
-        doSubmit(letterR.current, roomR.current || null);
+        const l = letterR.current;
+        const room = roomR.current || null;
+        doSubmit(l, room);
       }
     }
   }
@@ -1136,6 +1140,7 @@ export default function Home() {
                 disabled={disabled}
                 autoComplete="off"
                 enterKeyHint={idx === gameCats.length - 1 ? "go" : "next"}
+                inputMode="text"
                 ref={el=>{inputRefs.current[idx]=el;}}
               />
               <span className="cx">{bad?"❌":""}</span>
