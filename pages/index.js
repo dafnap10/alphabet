@@ -432,6 +432,7 @@ export default function Home() {
   const submittedR = useRef(false);
   const timeLeftR  = useRef(60);
   const inputRefs  = useRef([]);
+  const justMovedFocusR = useRef(false);
   const langR      = useRef((() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("lang");
@@ -966,6 +967,8 @@ export default function Home() {
       e.preventDefault();
       const next = inputRefs.current[idx+1];
       if (next) {
+        // Mark that keydown moved focus so keyup on the next field is ignored
+        justMovedFocusR.current = true;
         next.focus();
       } else {
         // Last category — submit answers
@@ -981,6 +984,11 @@ export default function Home() {
   function handleCatKeyUp(e, idx) {
     // Fallback for Android keyboards that fire keyup but not keydown for Go
     if (e.key === "Enter" || e.keyCode === 13) {
+      // If keydown already moved focus, this keyup is the tail of a NEXT press — ignore
+      if (justMovedFocusR.current) {
+        justMovedFocusR.current = false;
+        return;
+      }
       const next = inputRefs.current[idx+1];
       if (!next && !submittedR.current) {
         const l = letterR.current;
